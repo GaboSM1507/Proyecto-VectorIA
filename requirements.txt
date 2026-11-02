@@ -1,0 +1,12 @@
+# Probado con Python 3.13; los paquetes piden Python 3.11 o mayor
+tensorflow==2.21.0
+pandas==3.1.0
+numpy>=2.1,<3
+scikit-learn==1.9.1
+joblib==1.6.0
+matplotlib==3.11.2
+seaborn==0.13.2
+plotly==7.1.0
+opencv-python==5.0.0.93
+streamlit==1.66.1
+jupyter==1.1.1

@@ -31,7 +31,7 @@ with st.sidebar:
             ann_st = "🟢 Listo" if data_status.get("ann_ready") else "🔴 No disponible"
             rnn_st = "🟢 Listo" if data_status.get("rnn_ready") else "🟠 Modo Simulación"
             st.success("API Online")
-            st.write(f"**ANN (Riesgo):** {ann_st}")
+            st.write(f"**ANN (Acciones):** {ann_st}")
             st.write(f"**RNN (Casos):** {rnn_st}")
         else:
             st.error(f"API con errores ({health_res.status_code})")
@@ -50,9 +50,13 @@ with st.sidebar:
 st.title("Vector-IA: Sistema de Análisis y Control Epidemiológico")
 st.markdown("Plataforma analítica basada en Deep Learning para la evaluación y proyección de brotes de Dengue.")
 
+# Aviso ético fijo (pedido en el enunciado): visible en todas las pestañas
+st.warning("⚠️ **Aviso:** Vector-IA es una herramienta de apoyo a la vigilancia epidemiológica. "
+           "**No diagnostica dengue en personas.**")
+
 tab_overview, tab_ann, tab_rnn = st.tabs([
     "📋 Resumen del Proyecto",
-    "🧠 Evaluación de Riesgo (ANN)",
+    "🧠 Recomendación de Acción (ANN)",
     "📈 Pronóstico Temporal (RNN)"
 ])
 
@@ -68,7 +72,7 @@ with tab_overview:
             "para transformar datos climáticos en alertas tempranas utilizables por equipos de salud pública."
         )
         st.markdown("""
-        * **Modelo ANN (Clasificación Densa):** Categoriza el nivel de riesgo en **Bajo**, **Medio** o **Alto**.
+        * **Modelo ANN (Clasificación Densa):** Recomienda una de 4 acciones: **alerta sanitaria**, **fumigación focalizada**, **eliminación de criaderos** o **monitoreo normal**.
         * **Modelo RNN (Series Temporales):** Estima la evolución temporal de contagios para las próximas semanas.
         * **Arquitectura Desacoplada:** Backend independiente en **FastAPI** (`api/main.py`) consumido por **Streamlit** (`app/Home.py`).
         """)
@@ -81,68 +85,62 @@ with tab_overview:
         """)
 
 # -----------------------------------------------------------------------------
-# PESTAÑA 2: Evaluación de Riesgo (ANN)
+# PESTAÑA 2: Recomendación de Acción (ANN)
 # -----------------------------------------------------------------------------
 with tab_ann:
-    st.header("Evaluación del Nivel de Riesgo Epidemiológico")
-    st.caption("Complete los datos climáticos para consultar el modelo de clasificación ANN.")
+    st.header("Recomendación de Acción Preventiva")
+    st.caption("Mueva los controles y vea cómo cambia la recomendación (escenarios de «¿qué pasaría si?»).")
 
-    with st.form(key="form_evaluacion_ann"):
-        col1, col2, col3 = st.columns(3)
+    # Datos de entrada: cada control es un dato que la ANN necesita
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        casos = st.slider("Casos predichos (próximas 4 semanas)", 0, 5000, 339)
+        umbral = st.slider("Umbral endémico (casos)", 100, 3000, 282)
+    with col2:
+        lluvia = st.slider("Lluvia de los últimos 14 días (mm)", 0.0, 900.0, 17.0, step=1.0)
+        temp_max = st.slider("Temperatura máxima (°C)", 20.0, 35.0, 27.1, step=0.1)
+    with col3:
+        temp_min = st.slider("Temperatura mínima (°C)", 15.0, 26.0, 21.0, step=0.1)
+        humedad = st.slider("Humedad relativa (%)", 50.0, 100.0, 85.0, step=1.0)
+    aegypti = st.checkbox("Se detectó Aedes aegypti en la foto (resultado de la CNN)", value=True)
 
-        with col1:
-            st.subheader("📅 Dimensión Temporal")
-            semana_epi = st.number_input("Semana Epidemiológica", min_value=1, max_value=53, value=42)
-            mes = st.number_input("Mes del Año", min_value=1, max_value=12, value=10)
-            anio = st.number_input("Año", min_value=2000, max_value=2030, value=2024)
+    datos = {
+        "casos_pred_4sem": casos,
+        "casos_umbral_endemico": umbral,
+        "lluvia_14d_mm": lluvia,
+        "temp_max": temp_max,
+        "temp_min": temp_min,
+        "humedad": humedad,
+        "aegypti_detectado": int(aegypti),
+    }
 
-        with col2:
-            st.subheader("🌡️ Variables Térmicas")
-            temp_max_c = st.number_input("Temp. Máxima (°C)", min_value=10.0, max_value=45.0, value=34.5)
-            temp_min_c = st.number_input("Temp. Mínima (°C)", min_value=0.0, max_value=35.0, value=24.0)
-            temp_max_c_lag2 = st.number_input("Temp. Máx Lag 2 Semanas (°C)", min_value=10.0, max_value=45.0,
-                                              value=33.8)
+    # Se consulta a la API cada vez que cambia un control
+    try:
+        res = requests.post(f"{API_BASE_URL}/predict/accion", json=datos, timeout=10)
+        if res.status_code == 200:
+            r = res.json()
+            st.divider()
 
-        with col3:
-            st.subheader("🌧️ Precipitación y Humedad")
-            lluvia_mm = st.number_input("Precipitación Actual (mm)", min_value=0.0, max_value=500.0, value=185.0)
-            lluvia_mm_lag2 = st.number_input("Precipitación Lag 2 Semanas (mm)", min_value=0.0, max_value=500.0,
-                                             value=160.0)
-            humedad_rel_pct = st.number_input("Humedad Relativa (%)", min_value=0.0, max_value=100.0, value=88.0)
+            # Un color según la gravedad de la acción
+            colores = {
+                "alerta_sanitaria": st.error,
+                "fumigacion_focalizada": st.warning,
+                "eliminacion_criaderos": st.warning,
+                "monitoreo_normal": st.success,
+            }
+            nombre = r["accion"].replace("_", " ").capitalize()
+            colores[r["accion"]](f"### {nombre}\n\n{r['motivo']}")
 
-        btn_evaluar = st.form_submit_button(label="🚀 Consultar Inferencia ANN", use_container_width=True)
-
-    if btn_evaluar:
-        payload = {
-            "semana_epi": int(semana_epi),
-            "anio": int(anio),
-            "mes": int(mes),
-            "lluvia_mm": float(lluvia_mm),
-            "temp_max_c": float(temp_max_c),
-            "temp_min_c": float(temp_min_c),
-            "humedad_rel_pct": float(humedad_rel_pct),
-            "lluvia_mm_lag2": float(lluvia_mm_lag2),
-            "temp_max_c_lag2": float(temp_max_c_lag2)
-        }
-        try:
-            res = requests.post(f"{API_BASE_URL}/predict/ann", json=payload, timeout=10)
-            if res.status_code == 200:
-                data = res.json()
-                st.divider()
-                r_col1, r_col2 = st.columns([1, 2])
-                with r_col1:
-                    st.metric("Confianza del Modelo", f"{data['confianza_pct']}%")
-                with r_col2:
-                    st.markdown(f"### Clasificación: :{data['color']}[{data['nivel_riesgo']}]")
-
-                if data['clase_predicha'] == 2:
-                    st.error(f"🚨 **ALERTA CRÍTICA:** {data['accion_recomendada']}")
-                elif data['clase_predicha'] == 1:
-                    st.warning(f"⚠️ **ADVERTENCIA PREVENTIVA:** {data['accion_recomendada']}")
-                else:
-                    st.success(f"✅ **CONDICIÓN ESTABLE:** {data['accion_recomendada']}")
-        except Exception as e:
-            st.error(f"Error al conectar con la API: {e}")
+            m1, m2 = st.columns([1, 2])
+            with m1:
+                st.metric("Confianza de la red", f"{r['confianza_pct']}%")
+            with m2:
+                st.caption("Probabilidad (%) que la red asigna a cada acción")
+                st.bar_chart(pd.Series(r["probabilidades"]))
+        else:
+            st.error(f"Error devuelto por la API ({res.status_code}): {res.text}")
+    except Exception as e:
+        st.error(f"Error al conectar con la API: {e}")
 
 # -----------------------------------------------------------------------------
 # PESTAÑA 3: Pronóstico Temporal (RNN)

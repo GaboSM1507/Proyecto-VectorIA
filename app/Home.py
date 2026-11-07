@@ -1,4 +1,7 @@
+import os
+
 import pandas as pd
+import plotly.express as px
 import requests
 import streamlit as st
 
@@ -13,6 +16,10 @@ st.set_page_config(
 )
 
 API_BASE_URL = "http://127.0.0.1:8000"
+
+# Datos reales por cantón (para el mapa de calor)
+RUTA_CANTONES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "raw",
+                             "vectoria_casos_cantonal_anual_real.csv")
 
 # -----------------------------------------------------------------------------
 # 2. Barra Lateral (Sidebar)
@@ -55,10 +62,11 @@ st.markdown("Plataforma analítica basada en Deep Learning para la evaluación y
 st.warning("⚠️ **Aviso:** Vector-IA es una herramienta de apoyo a la vigilancia epidemiológica. "
            "**No diagnostica dengue en personas.**")
 
-tab_overview, tab_ann, tab_rnn = st.tabs([
+tab_overview, tab_ann, tab_rnn, tab_mapa = st.tabs([
     "📋 Resumen del Proyecto",
     "🧠 Recomendación de Acción (ANN)",
-    "📈 Pronóstico Temporal (RNN)"
+    "📈 Pronóstico Temporal (RNN)",
+    "🗺️ Explorar mapa (cantones)"
 ])
 
 # -----------------------------------------------------------------------------
@@ -215,3 +223,44 @@ with tab_rnn:
                 st.error(f"Error devuelto por la API ({res_rnn.status_code}): {res_rnn.text}")
         except Exception as ex:
             st.error(f"Error de conexión con la API: {ex}")
+
+# -----------------------------------------------------------------------------
+# PESTAÑA 4: Mapa de calor por cantón
+# -----------------------------------------------------------------------------
+with tab_mapa:
+    st.header("Casos de dengue por cantón (2013-2018)")
+    st.caption("Datos reales por cantón. Sirven para comparar cantones entre sí: "
+               "la suma de los cantones no cuadra con el total nacional.")
+
+    cantones = pd.read_csv(RUTA_CANTONES)
+
+    # Filtros: la provincia y cuántos cantones mostrar
+    f1, f2 = st.columns(2)
+    with f1:
+        provincia = st.selectbox("Provincia", ["Todas"] + sorted(cantones["provincia"].unique()))
+    with f2:
+        top = st.slider("Cantones a mostrar (los de más casos)", 5, 30, 15)
+
+    if provincia != "Todas":
+        cantones = cantones[cantones["provincia"] == provincia]
+
+    # Los cantones con más casos en todo el periodo
+    mas_casos = cantones.groupby("canton")["casos_dengue"].sum().nlargest(top).index
+
+    # Tabla: una fila por cantón y una columna por año
+    tabla = (cantones[cantones["canton"].isin(mas_casos)]
+             .pivot_table(index="canton", columns="anio", values="casos_dengue", aggfunc="sum")
+             .loc[mas_casos])
+    tabla.columns = tabla.columns.astype(str)   # los años como texto, para que no salgan con decimales
+
+    m1, m2 = st.columns(2)
+    with m1:
+        st.metric("Cantón con más casos", mas_casos[0])
+    with m2:
+        st.metric("Casos del cantón (2013-2018)", f"{int(tabla.loc[mas_casos[0]].sum()):,}")
+
+    # Mapa de calor: más rojo, más casos
+    fig = px.imshow(tabla, text_auto=True, aspect="auto", color_continuous_scale="YlOrRd",
+                    labels={"x": "Año", "y": "Cantón", "color": "Casos"})
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption("Las casillas vacías son años en que el cantón no aparece en el archivo.")

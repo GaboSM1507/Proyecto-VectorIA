@@ -11,21 +11,20 @@ from pydantic import BaseModel, Field
 # -----------------------------------------------------------------------------
 app = FastAPI(
     title="Vector-IA API Backend",
-    description="Servicio REST para la evaluación de riesgo epidemiológico (ANN) y pronóstico de casos (RNN).",
+    description="Servicio REST para la recomendación de acciones preventivas (ANN) y el pronóstico de casos (RNN).",
     version="1.1.0"
 )
 
 # -----------------------------------------------------------------------------
-# 2. Localización y Carga de Artefactos (.h5 y .pkl)
+# 2. Localización y Carga de Artefactos (.keras, .h5 y .pkl)
 # -----------------------------------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, '..'))
 MODELS_DIR = os.path.join(PROJECT_ROOT, 'models')
 
-# Rutas ANN
-ann_model_path = os.path.join(MODELS_DIR, 'ann_control.h5')
-ann_scaler_path = os.path.join(MODELS_DIR, 'scaler_ann.pkl')
-ann_cols_path = os.path.join(MODELS_DIR, 'ann_columns.pkl')
+# Rutas ANN (modelo de 4 acciones del Módulo 3)
+ann_model_path = os.path.join(MODELS_DIR, 'ann_acciones.keras')
+ann_prep_path = os.path.join(MODELS_DIR, 'ann_acciones_preprocesado.pkl')
 
 # Rutas RNN
 rnn_model_path = os.path.join(MODELS_DIR, 'rnn_simple.h5')
@@ -33,9 +32,8 @@ rnn_prep_path = os.path.join(MODELS_DIR, 'rnn_simple_preprocesado.pkl')
 
 # Carga de artefactos ANN
 try:
-    ann_model = tf.keras.models.load_model(ann_model_path)
-    ann_scaler = joblib.load(ann_scaler_path)
-    ann_columns = joblib.load(ann_cols_path)
+    ann_model = tf.keras.models.load_model(ann_model_path)  # la red entrenada
+    ann_prep = joblib.load(ann_prep_path)  # diccionario con: columnas, escalador y codificador
     ann_ready = True
     print("✓ Artefactos ANN cargados correctamente.")
 except Exception as e:
@@ -56,16 +54,27 @@ except Exception as e:
 # -----------------------------------------------------------------------------
 # 3. Esquemas de Validación (Pydantic)
 # -----------------------------------------------------------------------------
-class DenguePredictionInput(BaseModel):
-    semana_epi: int = Field(..., ge=1, le=53)
-    anio: int = Field(2024, ge=2000, le=2030)
-    mes: int = Field(..., ge=1, le=12)
-    lluvia_mm: float = Field(..., ge=0.0)
-    temp_max_c: float = Field(...)
-    temp_min_c: float = Field(...)
-    humedad_rel_pct: float = Field(..., ge=0.0, le=100.0)
-    lluvia_mm_lag2: float = Field(0.0)
-    temp_max_c_lag2: float = Field(0.0)
+class AccionInput(BaseModel):
+    casos_pred_4sem: float = Field(..., ge=0, description="Casos predichos para las próximas 4 semanas")
+    casos_umbral_endemico: float = Field(..., gt=0, description="Umbral endémico de esas semanas")
+    lluvia_14d_mm: float = Field(..., ge=0, description="Lluvia de los últimos 14 días (mm)")
+    temp_max: float = Field(..., description="Temperatura máxima (°C)")
+    temp_min: float = Field(..., description="Temperatura mínima (°C)")
+    humedad: float = Field(..., ge=0, le=100, description="Humedad relativa (%)")
+    aegypti_detectado: int = Field(..., ge=0, le=1, description="1 si la CNN detectó Aedes aegypti, 0 si no")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "casos_pred_4sem": 339,
+                "casos_umbral_endemico": 282,
+                "lluvia_14d_mm": 17.4,
+                "temp_max": 27.1,
+                "temp_min": 21.0,
+                "humedad": 85,
+                "aegypti_detectado": 1
+            }
+        }
 
 
 class RNNForecastInput(BaseModel):
@@ -99,57 +108,34 @@ def health_check():
     }
 
 
-@app.post("/predict/ann", summary="Evaluar Nivel de Riesgo (ANN)")
-def predict_risk(data: DenguePredictionInput):
+# Texto que explica cada acción (usa los datos que mandó el usuario)
+MOTIVOS = {
+    "alerta_sanitaria": "Los casos predichos ({casos:.0f}) superan el doble del umbral endémico ({umbral:.0f}).",
+    "fumigacion_focalizada": "Los casos predichos ({casos:.0f}) superan el umbral endémico ({umbral:.0f}) y se detectó Aedes aegypti.",
+    "eliminacion_criaderos": "Llovió {lluvia:.0f} mm en 14 días y la temperatura máxima fue {tmax:.1f} °C, condiciones que favorecen los criaderos.",
+    "monitoreo_normal": "No se cumplen condiciones de alerta, fumigación ni criaderos. Se recomienda vigilancia de rutina.",
+}
+
+
+@app.post("/predict/accion", summary="Recomendar acción preventiva (ANN)")
+def predict_accion(data: AccionInput):
+    """Recibe casos predichos, clima y detección de aegypti; devuelve la acción recomendada y su motivo."""
     if not ann_ready:
         raise HTTPException(status_code=500, detail="Artefactos ANN no disponibles.")
 
-    raw_data = data.model_dump()
-
-    # Imputación de Lags
-    raw_data.setdefault('lluvia_mm_lag4', raw_data.get('lluvia_mm_lag2', raw_data['lluvia_mm']))
-    raw_data.setdefault('lluvia_mm_lag6', raw_data['lluvia_mm'])
-    raw_data.setdefault('lluvia_mm_lag8', raw_data['lluvia_mm'])
-
-    raw_data.setdefault('temp_max_c_lag4', raw_data.get('temp_max_c_lag2', raw_data['temp_max_c']))
-    raw_data.setdefault('temp_max_c_lag6', raw_data['temp_max_c'])
-    raw_data.setdefault('temp_max_c_lag8', raw_data['temp_max_c'])
-
-    raw_data.setdefault('temp_min_c_lag2', raw_data['temp_min_c'])
-    raw_data.setdefault('temp_min_c_lag4', raw_data['temp_min_c'])
-    raw_data.setdefault('temp_min_c_lag6', raw_data['temp_min_c'])
-    raw_data.setdefault('temp_min_c_lag8', raw_data['temp_min_c'])
-
-    raw_data.setdefault('humedad_rel_pct_lag2', raw_data['humedad_rel_pct'])
-    raw_data.setdefault('humedad_rel_pct_lag4', raw_data['humedad_rel_pct'])
-    raw_data.setdefault('humedad_rel_pct_lag6', raw_data['humedad_rel_pct'])
-    raw_data.setdefault('humedad_rel_pct_lag8', raw_data['humedad_rel_pct'])
-
-    input_df = pd.DataFrame(0.0, index=[0], columns=ann_columns)
-    for col_name, value in raw_data.items():
-        if col_name in input_df.columns:
-            input_df[col_name] = value
-
-    scaled_input = ann_scaler.transform(input_df)
-    probabilities = ann_model.predict(scaled_input)
-    predicted_class = int(np.argmax(probabilities, axis=1)[0])
-    confidence = float(probabilities[0][predicted_class]) * 100
-
-    labels = {
-        0: {"nivel": "Riesgo Bajo", "color": "green", "accion": "Condiciones bajo control. Vigilancia de rutina."},
-        1: {"nivel": "Riesgo Medio", "color": "orange",
-            "accion": "Incremento de vectores. Aplicar control preventivo."},
-        2: {"nivel": "Riesgo Alto", "color": "red", "accion": "Alerta epidémica. Activar protocolos de fumigación."}
-    }
-
-    result = labels[predicted_class]
+    fila = pd.DataFrame([data.model_dump()])[ann_prep["columnas"]]  # ordena las columnas como al entrenar
+    entrada = ann_prep["escalador"].transform(fila)  # misma escala del entrenamiento
+    probabilidades = ann_model.predict(entrada, verbose=0)[0]  # una probabilidad por acción
+    indice = int(np.argmax(probabilidades))  # la acción más probable
+    accion = str(ann_prep["codificador"].classes_[indice])  # número -> nombre de la acción
 
     return {
-        "clase_predicha": predicted_class,
-        "nivel_riesgo": result["nivel"],
-        "color": result["color"],
-        "confianza_pct": round(confidence, 2),
-        "accion_recomendada": result["accion"]
+        "accion": accion,
+        "confianza_pct": round(float(probabilidades[indice]) * 100, 1),
+        "probabilidades": {str(c): round(float(p) * 100, 1)
+                           for c, p in zip(ann_prep["codificador"].classes_, probabilidades)},
+        "motivo": MOTIVOS[accion].format(casos=data.casos_pred_4sem, umbral=data.casos_umbral_endemico,
+                                         lluvia=data.lluvia_14d_mm, tmax=data.temp_max),
     }
 
 

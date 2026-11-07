@@ -43,6 +43,7 @@ with st.sidebar:
     st.markdown("**Integrantes del Proyecto:**")
     st.markdown("- Gabriel (Arquitectura & Backend)")
     st.markdown("- Jeremy (RNN Model)")
+    st.markdown("- Jeriel (ANN, API y documentación)")
 
 # -----------------------------------------------------------------------------
 # 3. Encabezado y Pestañas

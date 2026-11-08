@@ -1,0 +1,30 @@
+{
+    "cnn_propia": {
+        "modelo": "cnn_mosquitos.keras",
+        "f1_macro": 0.5397,
+        "f1_por_clase": {
+            "aegypti": 0.14,
+            "albopictus": 0.64,
+            "culex": 0.84
+        }
+    },
+    "mobilenetv2": {
+        "modelo": "mobilenet_mosquitos.keras",
+        "f1_macro": 0.883,
+        "f1_por_clase": {
+            "aegypti": 0.87,
+            "albopictus": 0.89,
+            "culex": 0.89
+        }
+    },
+    "evaluacion": {
+        "conjunto": "test",
+        "total_imagenes": 251,
+        "clases": [
+            "aegypti",
+            "albopictus",
+            "culex"
+        ],
+        "meta_f1_macro": 0.85
+    }
+}

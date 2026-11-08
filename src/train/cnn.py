@@ -7,7 +7,17 @@ van en el notebook 02_CNN_Mosquitos.ipynb (pendiente).
 Las respuestas deben ser números (0, 1, 2), no vectores de unos y ceros.
 """
 from tensorflow.keras.applications import MobileNetV2
-from tensorflow.keras.layers import Conv2D, Dense, Dropout, GlobalAveragePooling2D, Input, MaxPooling2D
+from tensorflow.keras.layers import (
+    Conv2D,
+    Dense,
+    Dropout,
+    GlobalAveragePooling2D,
+    Input,
+    MaxPooling2D,
+    RandomFlip,
+    RandomRotation,
+    RandomZoom
+)
 from tensorflow.keras.models import Sequential
 
 TAMANO = 128    # las fotos se redimensionan a 128 x 128 píxeles
@@ -20,6 +30,9 @@ def crear_cnn(n_clases=3):
     """
     modelo = Sequential([
         Input(shape=(TAMANO, TAMANO, 3)),
+        RandomFlip("horizontal"),
+        RandomRotation(0.05),
+        RandomZoom(0.1),
         Conv2D(32, 3, activation="relu"), MaxPooling2D(),     # busca bordes y manchas simples
         Conv2D(64, 3, activation="relu"), MaxPooling2D(),     # combina lo anterior en formas
         Conv2D(128, 3, activation="relu"), MaxPooling2D(),    # reconoce partes del mosquito

@@ -1,10 +1,15 @@
 import os
+import json
+import io
 import joblib
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-from fastapi import FastAPI, HTTPException
+
+from PIL import Image
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel, Field
+from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 
 # -----------------------------------------------------------------------------
 # 1. Configuración de la Aplicación FastAPI
@@ -22,25 +27,52 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, '..'))
 MODELS_DIR = os.path.join(PROJECT_ROOT, 'models')
 
-# Rutas ANN (modelo de 4 acciones del Módulo 3)
+# -----------------------------------------------------------------------------
+# Cargar MobileNetV2 para identificar mosquitos
+# -----------------------------------------------------------------------------
+
+cnn_model_path = os.path.join(
+    MODELS_DIR, "mobilenet_mosquitos.keras"
+)
+
+cnn_clases_path = os.path.join(
+    MODELS_DIR, "mosquitos_clases.json"
+)
+
+try:
+    # Cargar la red neuronal entrenada
+    cnn_model = tf.keras.models.load_model(cnn_model_path)
+
+    # Cargar el orden de las tres especies
+    with open(cnn_clases_path, "r", encoding="utf-8") as archivo:
+        cnn_clases = json.load(archivo)
+
+    cnn_ready = True
+    print("✓ MobileNetV2 cargada correctamente.")
+
+except Exception as e:
+    cnn_ready = False
+    print(f"✗ Error al cargar MobileNetV2: {e}")
+
+# Rutas ANN (modelo de 4 acciones del Módulo 3) #
 ann_model_path = os.path.join(MODELS_DIR, 'ann_acciones.keras')
 ann_prep_path = os.path.join(MODELS_DIR, 'ann_acciones_preprocesado.pkl')
 
-# Rutas RNN
+# Rutas RNN #
 rnn_model_path = os.path.join(MODELS_DIR, 'rnn_simple.h5')
 rnn_prep_path = os.path.join(MODELS_DIR, 'rnn_simple_preprocesado.pkl')
 
-# Carga de artefactos ANN
+# Carga de artefactos ANN #
 try:
     ann_model = tf.keras.models.load_model(ann_model_path)  # la red entrenada
-    ann_prep = joblib.load(ann_prep_path)  # diccionario con: columnas, escalador y codificador
+    ann_prep = joblib.load(ann_prep_path)  # diccionario con: columnas, escalador y codificador #
     ann_ready = True
     print("✓ Artefactos ANN cargados correctamente.")
 except Exception as e:
     ann_ready = False
     print(f"✗ Error al cargar artefactos ANN: {e}")
 
-# Carga de artefactos RNN
+# Carga de artefactos RNN #
 try:
     rnn_model = tf.keras.models.load_model(rnn_model_path)
     rnn_prep = joblib.load(rnn_prep_path)
@@ -108,7 +140,7 @@ def health_check():
     }
 
 
-# Texto que explica cada acción (usa los datos que mandó el usuario)
+# Texto que explica cada acción (usa los datos que mandó el usuario) #
 MOTIVOS = {
     "alerta_sanitaria": "Los casos predichos ({casos:.0f}) superan el doble del umbral endémico ({umbral:.0f}).",
     "fumigacion_focalizada": "Los casos predichos ({casos:.0f}) superan el umbral endémico ({umbral:.0f}) y se detectó Aedes aegypti.",
@@ -195,3 +227,68 @@ def predict_rnn(data: RNNForecastInput):
         "total_estimado_periodo": casos_totales_proyectados,
         "tendencia_general": tendencia
     }
+
+# -----------------------------------------------------------------------------
+# 5. Endpoint CNN: Identificación de mosquitos
+# -----------------------------------------------------------------------------
+
+@app.post("/predict/mosquito", summary="Identificar especie de mosquito")
+async def predict_mosquito(file: UploadFile = File(...)):
+
+    if not cnn_ready:
+        raise HTTPException(
+            status_code=503,
+            detail="El modelo de mosquitos no está disponible."
+        )
+
+    # Verificar el tipo de archivo
+    if file.content_type not in ("image/jpeg", "image/png"):
+        raise HTTPException(
+            status_code=400,
+            detail="Solo se permiten imágenes JPG o PNG."
+        )
+
+    try:
+        # Leer la fotografía
+        contenido = await file.read()
+
+        # Convertir a RGB y redimensionar
+        imagen = Image.open(io.BytesIO(contenido)).convert("RGB")
+        imagen = imagen.resize((128, 128))
+
+        # Preparar la imagen para MobileNetV2
+        imagen_array = np.asarray(imagen, dtype=np.float32)
+        imagen_array = preprocess_input(imagen_array)
+
+        # Agregar la dimensión del lote
+        imagen_array = np.expand_dims(imagen_array, axis=0)
+
+        # Obtener las probabilidades
+        probabilidades = cnn_model.predict(
+            imagen_array,
+            verbose=0
+        )[0]
+
+        # Identificar la especie
+        indice = int(np.argmax(probabilidades))
+        especie = cnn_clases[str(indice)]
+
+        return {
+            "especie": especie,
+            "confianza_pct": round(
+                float(probabilidades[indice]) * 100, 2
+            ),
+            "probabilidades": {
+                cnn_clases[str(i)]: round(float(p) * 100, 2)
+                for i, p in enumerate(probabilidades)
+            }
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No se pudo procesar la imagen: {str(e)}"
+        )

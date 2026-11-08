@@ -1,0 +1,1 @@
+"""Código fuente del proyecto Vector-IA (vigilancia del dengue en Costa Rica)."""

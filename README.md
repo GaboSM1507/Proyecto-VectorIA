@@ -26,7 +26,7 @@ Proyecto-VectorIA/
 ├── notebooks/
 │   ├── 01_EDA.ipynb              # análisis exploratorio de los CSV
 │   ├── 02_CNN_Mosquitos.ipynb    # análisis de imágenes y preparación para la CNN
-│   ├── 03_LSTM_Casos.ipynb       # pronóstico de casos (SimpleRNN)
+│   ├── 03_LSTM_Casos.ipynb       # pronóstico de casos (SimpleRNN y LSTM)
 │   └── 04_ANN_Acciones.ipynb     # recomendación de acciones
 ├── src/              # código fuente
 ├── models/           # modelos entrenados (.keras / .h5) y sus preprocesadores (.pkl)
@@ -103,7 +103,18 @@ Pendiente: F1 macro de la CNN propia y de MobileNetV2.
 
 ### Módulo 2: RNN / LSTM (pronóstico de casos)
 
-La SimpleRNN supera al baseline estacional (misma semana del año anterior): RMSE de 260 contra 638 y MAE de 175 contra 456. Pendiente: LSTM o GRU como modelo principal.
+- **Datos:** `dengue_procesado.csv` (casos reales y clima semanales, 2014-2024).
+- **Entrada y salida:** las 26 semanas anteriores (casos en logaritmo, lluvia, temperatura máxima y mínima, humedad y la semana del año) para pronosticar las 4 siguientes.
+- **Separación:** temporal. Train hasta 2021, validación 2022 y prueba 2023-2024.
+- **Redes:** SimpleRNN 32 → 4 salidas (base) y LSTM 64 → LSTM 32 → Dropout 0.2 → 4 salidas (principal), con parada anticipada.
+
+| Modelo | RMSE | MAE |
+|---|---|---|
+| SimpleRNN | 260 | 175 |
+| LSTM | 494 | 334 |
+| Baseline estacional (misma semana del año anterior) | 638 | 456 |
+
+Las dos superan al baseline. La LSTM quedó peor que la SimpleRNN: el año de validación (2022) no tuvo brote y la parada anticipada la detuvo antes de que aprendiera a seguirlos. Por eso la API y la app usan la SimpleRNN (`rnn_simple.h5`), y la LSTM queda guardada en `rnn_lstm.h5`. El detalle está en `notebooks/03_LSTM_Casos.ipynb`.
 
 ### Módulo 3: ANN (recomendación de acción)
 

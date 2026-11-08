@@ -1,3 +1,4 @@
+
 import os
 import json
 import io
@@ -11,283 +12,509 @@ from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel, Field
 from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 
-# -----------------------------------------------------------------------------
-# 1. Configuración de la Aplicación FastAPI
-# -----------------------------------------------------------------------------
+
+# ============================================================
+# 1. CONFIGURACIÓN GENERAL
+# ============================================================
+
 app = FastAPI(
-    title="Vector-IA API Backend",
-    description="Servicio REST para la recomendación de acciones preventivas (ANN) y el pronóstico de casos (RNN).",
-    version="1.1.0"
+    title="VectorIA API",
+    description="API inteligente para vigilancia y prevención del dengue en Costa Rica.",
+    version="2.0.0"
 )
 
-# -----------------------------------------------------------------------------
-# 2. Localización y Carga de Artefactos (.keras, .h5 y .pkl)
-# -----------------------------------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, '..'))
-MODELS_DIR = os.path.join(PROJECT_ROOT, 'models')
+PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, ".."))
+MODELS_DIR = os.path.join(PROJECT_ROOT, "models")
 
-# -----------------------------------------------------------------------------
-# Cargar MobileNetV2 para identificar mosquitos
-# -----------------------------------------------------------------------------
 
-cnn_model_path = os.path.join(
-    MODELS_DIR, "mobilenet_mosquitos.keras"
-)
+# ============================================================
+# 2. RUTAS DE LOS MODELOS
+# ============================================================
 
-cnn_clases_path = os.path.join(
-    MODELS_DIR, "mosquitos_clases.json"
-)
+cnn_model_path = os.path.join(MODELS_DIR, "mobilenet_mosquitos.keras")
+cnn_clases_path = os.path.join(MODELS_DIR, "mosquitos_clases.json")
+
+ann_model_path = os.path.join(MODELS_DIR, "ann_acciones.keras")
+ann_prep_path = os.path.join(MODELS_DIR, "ann_acciones_preprocesado.pkl")
+
+rnn_model_path = os.path.join(MODELS_DIR, "rnn_simple.h5")
+rnn_prep_path = os.path.join(MODELS_DIR, "rnn_simple_preprocesado.pkl")
+
+
+# ============================================================
+# 3. CARGA DE MODELOS
+# ============================================================
+
+cnn_ready = False
+ann_ready = False
+rnn_ready = False
+
+cnn_model = None
+cnn_clases = None
+
+ann_model = None
+ann_prep = None
+
+rnn_model = None
+rnn_prep = None
+
+
+# ---------------- CNN ----------------
 
 try:
-    # Cargar la red neuronal entrenada
-    cnn_model = tf.keras.models.load_model(cnn_model_path)
+    cnn_model = tf.keras.models.load_model(
+        cnn_model_path,
+        compile=False
+    )
 
-    # Cargar el orden de las tres especies
     with open(cnn_clases_path, "r", encoding="utf-8") as archivo:
         cnn_clases = json.load(archivo)
 
     cnn_ready = True
-    print("✓ MobileNetV2 cargada correctamente.")
+    print("CNN MobileNetV2 cargada correctamente.")
 
 except Exception as e:
-    cnn_ready = False
-    print(f"✗ Error al cargar MobileNetV2: {e}")
+    print(f"Error cargando CNN: {e}")
 
-# Rutas ANN (modelo de 4 acciones del Módulo 3) #
-ann_model_path = os.path.join(MODELS_DIR, 'ann_acciones.keras')
-ann_prep_path = os.path.join(MODELS_DIR, 'ann_acciones_preprocesado.pkl')
 
-# Rutas RNN #
-rnn_model_path = os.path.join(MODELS_DIR, 'rnn_simple.h5')
-rnn_prep_path = os.path.join(MODELS_DIR, 'rnn_simple_preprocesado.pkl')
+# ---------------- ANN ----------------
 
-# Carga de artefactos ANN #
 try:
-    ann_model = tf.keras.models.load_model(ann_model_path)  # la red entrenada
-    ann_prep = joblib.load(ann_prep_path)  # diccionario con: columnas, escalador y codificador #
+    ann_model = tf.keras.models.load_model(
+        ann_model_path,
+        compile=False
+    )
+
+    ann_prep = joblib.load(ann_prep_path)
+
     ann_ready = True
-    print("✓ Artefactos ANN cargados correctamente.")
-except Exception as e:
-    ann_ready = False
-    print(f"✗ Error al cargar artefactos ANN: {e}")
+    print("ANN cargada correctamente.")
 
-# Carga de artefactos RNN #
+except Exception as e:
+    print(f"Error cargando ANN: {e}")
+
+
+# ---------------- RNN ----------------
+
 try:
-    rnn_model = tf.keras.models.load_model(rnn_model_path)
+    rnn_model = tf.keras.models.load_model(
+        rnn_model_path,
+        compile=False
+    )
+
     rnn_prep = joblib.load(rnn_prep_path)
+
+    # Verificar que existan todos los elementos necesarios
+    claves_necesarias = [
+        "columnas",
+        "escalador_X",
+        "escalador_y",
+        "ventana",
+        "horizonte"
+    ]
+
+    for clave in claves_necesarias:
+        if clave not in rnn_prep:
+            raise ValueError(
+                f"Falta la clave {clave} en el preprocesador RNN."
+            )
+
+    if rnn_prep["ventana"] != 26:
+        raise ValueError("La ventana del modelo no es de 26 semanas.")
+
+    if rnn_prep["horizonte"] != 4:
+        raise ValueError("El horizonte del modelo no es de 4 semanas.")
+
     rnn_ready = True
-    print("✓ Artefactos RNN cargados correctamente.")
+    print("SimpleRNN cargada correctamente.")
+
 except Exception as e:
-    rnn_ready = False
-    print(f"⚠ Aviso: Artefactos RNN no encontrados o con formato imprevisto ({e}). Modo simulación fallback activo.")
+    print(f"Error cargando RNN: {e}")
 
 
-# -----------------------------------------------------------------------------
-# 3. Esquemas de Validación (Pydantic)
-# -----------------------------------------------------------------------------
+# ============================================================
+# 4. ESQUEMAS DE ENTRADA
+# ============================================================
+
 class AccionInput(BaseModel):
-    casos_pred_4sem: float = Field(..., ge=0, description="Casos predichos para las próximas 4 semanas")
-    casos_umbral_endemico: float = Field(..., gt=0, description="Umbral endémico de esas semanas")
-    lluvia_14d_mm: float = Field(..., ge=0, description="Lluvia de los últimos 14 días (mm)")
-    temp_max: float = Field(..., description="Temperatura máxima (°C)")
-    temp_min: float = Field(..., description="Temperatura mínima (°C)")
-    humedad: float = Field(..., ge=0, le=100, description="Humedad relativa (%)")
-    aegypti_detectado: int = Field(..., ge=0, le=1, description="1 si la CNN detectó Aedes aegypti, 0 si no")
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "casos_pred_4sem": 339,
-                "casos_umbral_endemico": 282,
-                "lluvia_14d_mm": 17.4,
-                "temp_max": 27.1,
-                "temp_min": 21.0,
-                "humedad": 85,
-                "aegypti_detectado": 1
-            }
-        }
+    casos_pred_4sem: float = Field(..., ge=0)
+    casos_umbral_endemico: float = Field(..., gt=0)
+    lluvia_14d_mm: float = Field(..., ge=0)
+    temp_max: float
+    temp_min: float
+    humedad: float = Field(..., ge=0, le=100)
+    aegypti_detectado: int = Field(..., ge=0, le=1)
+
+
+class SemanaHistoricaInput(BaseModel):
+
+    casos_dengue: float = Field(..., ge=0)
+    lluvia_mm: float = Field(..., ge=0)
+    temp_max_c: float
+    temp_min_c: float
+    humedad_rel_pct: float = Field(..., ge=0, le=100)
+    semana_epi: int = Field(..., ge=1, le=53)
 
 
 class RNNForecastInput(BaseModel):
-    casos_ultimas_4_semanas: list[float] = Field(
+
+    semanas: list[SemanaHistoricaInput] = Field(
         ...,
-        min_items=4,
-        max_items=4,
-        description="Registros semanales de casos observados en el último mes"
+        min_length=26,
+        max_length=26,
+        description="Historial de exactamente 26 semanas."
     )
-    semanas_a_proyectar: int = Field(4, ge=1, le=8, description="Número de semanas a futuro para el pronóstico")
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "casos_ultimas_4_semanas": [12.0, 18.0, 25.0, 31.0],
-                "semanas_a_proyectar": 4
-            }
-        }
 
 
-# -----------------------------------------------------------------------------
-# 4. Endpoints de la API
-# -----------------------------------------------------------------------------
-@app.get("/", summary="Estado de Salud del Servicio")
+# ============================================================
+# 5. ESTADO DE LA API
+# ============================================================
+
+@app.get("/", summary="Estado de los servicios")
+
 def health_check():
+
     return {
         "status": "online",
+        "cnn_ready": cnn_ready,
         "ann_ready": ann_ready,
         "rnn_ready": rnn_ready,
         "models_directory": MODELS_DIR
     }
 
 
-# Texto que explica cada acción (usa los datos que mandó el usuario) #
+# ============================================================
+# 6. MÓDULO ANN: RECOMENDACIÓN DE ACCIONES
+# ============================================================
+
 MOTIVOS = {
-    "alerta_sanitaria": "Los casos predichos ({casos:.0f}) superan el doble del umbral endémico ({umbral:.0f}).",
-    "fumigacion_focalizada": "Los casos predichos ({casos:.0f}) superan el umbral endémico ({umbral:.0f}) y se detectó Aedes aegypti.",
-    "eliminacion_criaderos": "Llovió {lluvia:.0f} mm en 14 días y la temperatura máxima fue {tmax:.1f} °C, condiciones que favorecen los criaderos.",
-    "monitoreo_normal": "No se cumplen condiciones de alerta, fumigación ni criaderos. Se recomienda vigilancia de rutina.",
+
+    "alerta_sanitaria":
+        "Los casos predichos superan el doble del umbral endémico.",
+
+    "fumigacion_focalizada":
+        "Los casos superan el umbral endémico y se detectó Aedes aegypti.",
+
+    "eliminacion_criaderos":
+        "Las condiciones de lluvia y temperatura favorecen los criaderos.",
+
+    "monitoreo_normal":
+        "Se recomienda mantener la vigilancia y el monitoreo de rutina."
 }
 
 
-@app.post("/predict/accion", summary="Recomendar acción preventiva (ANN)")
+@app.post("/predict/accion", summary="Recomendar acción preventiva")
+
 def predict_accion(data: AccionInput):
-    """Recibe casos predichos, clima y detección de aegypti; devuelve la acción recomendada y su motivo."""
+
     if not ann_ready:
-        raise HTTPException(status_code=500, detail="Artefactos ANN no disponibles.")
+        raise HTTPException(
+            status_code=503,
+            detail="El modelo ANN no está disponible."
+        )
 
-    fila = pd.DataFrame([data.model_dump()])[ann_prep["columnas"]]  # ordena las columnas como al entrenar
-    entrada = ann_prep["escalador"].transform(fila)  # misma escala del entrenamiento
-    probabilidades = ann_model.predict(entrada, verbose=0)[0]  # una probabilidad por acción
-    indice = int(np.argmax(probabilidades))  # la acción más probable
-    accion = str(ann_prep["codificador"].classes_[indice])  # número -> nombre de la acción
+    try:
 
-    return {
-        "accion": accion,
-        "confianza_pct": round(float(probabilidades[indice]) * 100, 1),
-        "probabilidades": {str(c): round(float(p) * 100, 1)
-                           for c, p in zip(ann_prep["codificador"].classes_, probabilidades)},
-        "motivo": MOTIVOS[accion].format(casos=data.casos_pred_4sem, umbral=data.casos_umbral_endemico,
-                                         lluvia=data.lluvia_14d_mm, tmax=data.temp_max),
-    }
+        fila = pd.DataFrame([data.model_dump()])
+
+        # Ordenar las variables como durante el entrenamiento
+        columnas = ann_prep["columnas"]
+
+        fila = fila[columnas]
+
+        # Aplicar escalado
+        entrada = ann_prep["escalador"].transform(fila)
+
+        # Predicción de la ANN
+        probabilidades = ann_model.predict(
+            entrada,
+            verbose=0
+        )[0]
+
+        indice = int(np.argmax(probabilidades))
+
+        accion = str(
+            ann_prep["codificador"].classes_[indice]
+        )
+
+        return {
+            "accion": accion,
+
+            "confianza_pct": round(
+                float(probabilidades[indice]) * 100, 2
+            ),
+
+            "probabilidades": {
+                str(clase): round(float(prob) * 100, 2)
+                for clase, prob in zip(
+                    ann_prep["codificador"].classes_,
+                    probabilidades
+                )
+            },
+
+            "motivo": MOTIVOS.get(
+                accion,
+                "Acción preventiva recomendada por el modelo."
+            )
+        }
+
+    except Exception as e:
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error en la predicción ANN: {str(e)}"
+        )
 
 
-@app.post("/predict/rnn", summary="Pronóstico Temporal de Casos (RNN)")
+# ============================================================
+# 7. MÓDULO RNN: PREDICCIÓN DE CASOS DE DENGUE
+# ============================================================
+
+@app.post("/predict/rnn", summary="Pronóstico de dengue con SimpleRNN")
+
 def predict_rnn(data: RNNForecastInput):
-    """
-    Recibe la secuencia de casos observados en las últimas 4 semanas
-    y proyecta la curva de contagios para las próximas semanas.
-    """
-    historico = np.array(data.casos_ultimas_4_semanas, dtype=float)
-    horizonte = data.semanas_a_proyectar
 
-    if rnn_ready:
-        try:
-            # Preprocesar / Escalar secuencia según el artefacto cargado
-            if hasattr(rnn_prep, 'transform'):
-                seq_scaled = rnn_prep.transform(historico.reshape(-1, 1)).reshape(1, 4, 1)
-            else:
-                seq_scaled = historico.reshape(1, 4, 1)
+    if not rnn_ready:
 
-            # Inferencia iterativa o directa
-            predicciones_escaladas = []
-            curr_seq = seq_scaled.copy()
+        raise HTTPException(
+            status_code=503,
+            detail="El modelo SimpleRNN no está disponible."
+        )
 
-            for _ in range(horizonte):
-                p = rnn_model.predict(curr_seq, verbose=0)
-                predicciones_escaladas.append(p[0, 0])
-                curr_seq = np.roll(curr_seq, -1, axis=1)
-                curr_seq[0, -1, 0] = p[0, 0]
+    try:
 
-            # Invertir escalado si el preprocesador lo soporta
-            if hasattr(rnn_prep, 'inverse_transform'):
-                predicciones = rnn_prep.inverse_transform(np.array(predicciones_escaladas).reshape(-1, 1)).flatten()
-            else:
-                predicciones = np.array(predicciones_escaladas)
+        # ----------------------------------------------------
+        # A. Convertir las 26 semanas en un DataFrame
+        # ----------------------------------------------------
 
-        except Exception as err:
-            print(f"Error durante inferencia RNN: {err}. Generando proyección ajustada.")
-            # Fallback analítico basado en tendencia autorregresiva
-            tasa_crecimiento = historico[-1] / (historico[-2] + 1e-5)
-            predicciones = [historico[-1] * (tasa_crecimiento ** i) for i in range(1, horizonte + 1)]
-    else:
-        # Fallback si no existen artefactos RNN
-        tasa = historico[-1] / (historico[0] + 1e-5)
-        predicciones = [max(0.0, historico[-1] + (i * 2.5 * (1 if tasa >= 1 else -1))) for i in range(1, horizonte + 1)]
+        df = pd.DataFrame([
+            semana.model_dump()
+            for semana in data.semanas
+        ])
 
-    # Formatear respuesta JSON para graficado directo
-    predicciones_limpias = [round(float(x), 1) for x in predicciones]
-    casos_totales_proyectados = round(sum(predicciones_limpias), 1)
+        # Comprobar que los valores sean válidos
+        valores = df.select_dtypes(include=[np.number]).to_numpy()
 
-    tendencia = "Ascendente 📈" if predicciones_limpias[-1] > historico[-1] else "Descendente / Estable 📉"
+        if not np.isfinite(valores).all():
+            raise ValueError(
+                "Los datos contienen valores no válidos."
+            )
 
-    return {
-        "historico_ingresado": historico.tolist(),
-        "semanas_proyectadas": [f"Semana +{i + 1}" for i in range(horizonte)],
-        "pronostico_casos": predicciones_limpias,
-        "total_estimado_periodo": casos_totales_proyectados,
-        "tendencia_general": tendencia
-    }
+        # ----------------------------------------------------
+        # B. Crear las variables utilizadas en entrenamiento
+        # ----------------------------------------------------
 
-# -----------------------------------------------------------------------------
-# 5. Endpoint CNN: Identificación de mosquitos
-# -----------------------------------------------------------------------------
+        df["log_casos"] = np.log1p(
+            df["casos_dengue"]
+        )
+
+        df["semana_sin"] = np.sin(
+            2 * np.pi * df["semana_epi"] / 52
+        )
+
+        df["semana_cos"] = np.cos(
+            2 * np.pi * df["semana_epi"] / 52
+        )
+
+        # ----------------------------------------------------
+        # C. Mantener el orden exacto de las columnas
+        # ----------------------------------------------------
+
+        columnas = rnn_prep["columnas"]
+
+        df_modelo = df[columnas]
+
+        # ----------------------------------------------------
+        # D. Escalar los datos
+        # ----------------------------------------------------
+
+        entrada_escalada = rnn_prep["escalador_X"].transform(
+            df_modelo
+        )
+
+        # Formato que necesita la red:
+        # (1 muestra, 26 semanas, 7 variables)
+
+        entrada = entrada_escalada.reshape(
+            1,
+            rnn_prep["ventana"],
+            len(columnas)
+        )
+
+        # ----------------------------------------------------
+        # E. Ejecutar el modelo entrenado
+        # ----------------------------------------------------
+
+        predicciones_escaladas = rnn_model.predict(
+            entrada,
+            verbose=0
+        )
+
+        # Verificar las cuatro salidas
+        if predicciones_escaladas.shape != (1, 4):
+            raise ValueError(
+                "El modelo no devolvió las cuatro semanas esperadas."
+            )
+
+        # ----------------------------------------------------
+        # F. Recuperar la escala original
+        # ----------------------------------------------------
+
+        predicciones_log = rnn_prep["escalador_y"].inverse_transform(
+            predicciones_escaladas.reshape(-1, 1)
+        )
+
+        # Deshacer log1p
+        predicciones = np.expm1(
+            predicciones_log
+        ).flatten()
+
+        # Evitar resultados negativos
+        predicciones = np.maximum(predicciones, 0)
+
+        predicciones_limpias = [
+            round(float(x), 1)
+            for x in predicciones
+        ]
+
+        # ----------------------------------------------------
+        # G. Preparar la respuesta
+        # ----------------------------------------------------
+
+        casos_historicos = [
+            float(semana.casos_dengue)
+            for semana in data.semanas
+        ]
+
+        tendencia = (
+            "Ascendente"
+            if predicciones_limpias[-1] > casos_historicos[-1]
+            else "Descendente / Estable"
+        )
+
+        return {
+
+            "modelo_utilizado": "SimpleRNN entrenada",
+
+            "semanas_historicas": 26,
+
+            "variables_utilizadas": columnas,
+
+            "historico_ingresado": casos_historicos,
+
+            "semanas_proyectadas": [
+                "Semana +1",
+                "Semana +2",
+                "Semana +3",
+                "Semana +4"
+            ],
+
+            "pronostico_casos": predicciones_limpias,
+
+            "total_estimado_periodo": round(
+                float(sum(predicciones_limpias)), 1
+            ),
+
+            "tendencia_general": tendencia
+        }
+
+    except Exception as e:
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error al generar el pronóstico RNN: {str(e)}"
+        )
+
+
+# ============================================================
+# 8. MÓDULO CNN: IDENTIFICACIÓN DE MOSQUITOS
+# ============================================================
 
 @app.post("/predict/mosquito", summary="Identificar especie de mosquito")
+
 async def predict_mosquito(file: UploadFile = File(...)):
 
     if not cnn_ready:
+
         raise HTTPException(
             status_code=503,
-            detail="El modelo de mosquitos no está disponible."
+            detail="El modelo CNN no está disponible."
         )
 
-    # Verificar el tipo de archivo
-    if file.content_type not in ("image/jpeg", "image/png"):
+    if file.content_type not in (
+        "image/jpeg",
+        "image/png"
+    ):
+
         raise HTTPException(
             status_code=400,
             detail="Solo se permiten imágenes JPG o PNG."
         )
 
     try:
-        # Leer la fotografía
+
+        # Leer imagen
         contenido = await file.read()
 
-        # Convertir a RGB y redimensionar
-        imagen = Image.open(io.BytesIO(contenido)).convert("RGB")
+        if not contenido:
+            raise ValueError("La imagen está vacía.")
+
+        # Procesar fotografía
+        imagen = Image.open(
+            io.BytesIO(contenido)
+        ).convert("RGB")
+
         imagen = imagen.resize((128, 128))
 
-        # Preparar la imagen para MobileNetV2
-        imagen_array = np.asarray(imagen, dtype=np.float32)
-        imagen_array = preprocess_input(imagen_array)
+        imagen_array = np.asarray(
+            imagen,
+            dtype=np.float32
+        )
 
-        # Agregar la dimensión del lote
-        imagen_array = np.expand_dims(imagen_array, axis=0)
+        # Preprocesamiento de MobileNetV2
+        imagen_array = preprocess_input(
+            imagen_array
+        )
 
-        # Obtener las probabilidades
+        # Agregar dimensión del lote
+        imagen_array = np.expand_dims(
+            imagen_array,
+            axis=0
+        )
+
+        # Ejecutar CNN
         probabilidades = cnn_model.predict(
             imagen_array,
             verbose=0
         )[0]
 
-        # Identificar la especie
+        # Obtener especie
         indice = int(np.argmax(probabilidades))
+
         especie = cnn_clases[str(indice)]
 
         return {
+
             "especie": especie,
+
             "confianza_pct": round(
-                float(probabilidades[indice]) * 100, 2
+                float(probabilidades[indice]) * 100,
+                2
             ),
+
             "probabilidades": {
-                cnn_clases[str(i)]: round(float(p) * 100, 2)
+                cnn_clases[str(i)]: round(
+                    float(p) * 100,
+                    2
+                )
                 for i, p in enumerate(probabilidades)
             }
         }
 
-    except HTTPException:
-        raise
-
     except Exception as e:
+
         raise HTTPException(
             status_code=400,
             detail=f"No se pudo procesar la imagen: {str(e)}"

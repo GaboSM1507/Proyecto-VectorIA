@@ -82,11 +82,23 @@ DATA_DIR = os.path.join(PROJECT_ROOT, "data", "processed")
 # 2. RUTAS DE LOS MODELOS Y DATOS
 # ============================================================
 
-# MobileNetV2 con la última capa reentrenada agregando fotos de Mosquito Alert (fondos variados):
-# notebook 02, sección 6. Si no está, se usa la MobileNetV2 original.
-cnn_model_path = os.path.join(MODELS_DIR, "mobilenet_mosquitos_ma.keras")
-if not os.path.exists(cnn_model_path):
-    cnn_model_path = os.path.join(MODELS_DIR, "mobilenet_mosquitos.keras")
+def modelo_cnn_de_la_app():
+    """
+    La MobileNetV2 que eligió el notebook 02 (sección 6) con la validación, reentrenada con fotos
+    de Mosquito Alert (fondos variados). Si no se puede leer, se usa la MobileNetV2 original.
+    """
+    try:
+        with open(os.path.join(MODELS_DIR, "mosquitos_resultados.json"), encoding="utf-8") as archivo:
+            nombre = json.load(archivo)["experimento_mosquito_alert"]["modelo_para_la_app"]
+        ruta = os.path.join(MODELS_DIR, os.path.basename(nombre))
+        if os.path.exists(ruta):
+            return ruta
+    except Exception:
+        pass
+    return os.path.join(MODELS_DIR, "mobilenet_mosquitos.keras")
+
+
+cnn_model_path = modelo_cnn_de_la_app()
 cnn_clases_path = os.path.join(MODELS_DIR, "mosquitos_clases.json")
 
 ann_model_path = os.path.join(MODELS_DIR, "ann_acciones.keras")
@@ -1379,11 +1391,12 @@ def pagina_inicio():
     try:
         with open(os.path.join(MODELS_DIR, "mosquitos_resultados.json"), encoding="utf-8") as archivo:
             resultados_cnn = json.load(archivo)
-        if cnn_model_path.endswith("_ma.keras"):
-            prueba = resultados_cnn["experimento_mosquito_alert"]["prueba"]
-            clave = next(k for k in prueba if k.startswith("MobileNetV2 con Mosquito Alert | Mosquito Alert"))
-            dato_cnn = (f"F1 macro en prueba: <b>{100 * prueba[clave]['f1_macro']:.2f} %</b> con fotos de celular "
-                        f"(Mosquito Alert)")
+        f1_app = resultados_cnn.get("experimento_mosquito_alert", {}).get("f1_prueba_app", {})
+        kaggle = next((v for k, v in f1_app.items() if k.startswith("Kaggle")), None)
+        celular = next((v for k, v in f1_app.items() if k.startswith("Mosquito Alert")), None)
+        if os.path.basename(cnn_model_path) != "mobilenet_mosquitos.keras" and None not in (kaggle, celular):
+            dato_cnn = (f"F1 macro en prueba: <b>{100 * kaggle:.2f} %</b> (Kaggle y Mendeley) · "
+                        f"{100 * celular:.2f} % con fotos de celular")
         else:
             dato_cnn = f"F1 macro en test: <b>{100 * resultados_cnn['mobilenetv2']['f1_macro']:.1f} %</b>"
     except Exception:

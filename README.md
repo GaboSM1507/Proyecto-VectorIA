@@ -79,9 +79,10 @@ Casi todas las fotos de *Culex* venían de Mendeley (fondo blanco) y las de *aeg
 | Modelo (fotos de prueba que no se usaron para entrenar) | Mosquito Alert (128 fotos de celular) | Kaggle y Mendeley (247) |
 |---|---:|---:|
 | MobileNetV2 original | 24.96 % | 85.33 % |
-| **MobileNetV2 con Mosquito Alert (la de la aplicación)** | **70.05 %** | 84.22 % |
+| MobileNetV2 con Mosquito Alert (solo la capa final) | 70.05 % | 84.22 % |
+| **MobileNetV2 con Mosquito Alert y ajuste fino (la de la aplicación)** | 59.43 % | **87.46 %** |
 
-Con fotos de celular, la MobileNetV2 original llamaba *Culex* a casi todo; la reentrenada acierta 50 de 61 *albopictus* y 58 de 60 *Culex*. Se eligió con validación (F1 de 0.861 contra 0.700) y es la que usa la aplicación (`models/mobilenet_mosquitos_ma.keras`). En las fotos de Kaggle y Mendeley baja un poco (de 85.33 % a 84.22 %), a cambio de funcionar con fotos reales. La CNN propia con recorte no se usa en la aplicación porque el recorte depende de un fondo parejo como el de Kaggle.
+Con fotos de celular, la MobileNetV2 original llamaba *Culex* a casi todo; Primero se reentrenó solo la capa final (sección 6.3) y después también las últimas capas de la base, con aumento de datos (ajuste fino, sección 6.8). Con validación ganó el ajuste fino (F1 de 0.894, contra 0.861 y 0.700 del original), y es el que usa la aplicación (`models/mobilenet_mosquitos_ma_ft.keras`): llega a 87.46 % en Kaggle y Mendeley, por encima de la meta, y con fotos de celular acierta 54 de 61 *albopictus* y 57 de 60 *Culex*. Lo que sigue difícil es *aegypti* con fondos variados (0 de 7 en prueba; las dos versiones aciertan 1 de 7 en validación), porque Mosquito Alert solo tiene 47 fotos de esa especie; por eso su F1 macro con fotos de celular es 59.43 %. La CNN propia con recorte no se usa en la aplicación porque el recorte depende de un fondo parejo como el de Kaggle.
 
 ### Módulo 2. Pronóstico de casos de dengue (RNN/LSTM)
 
@@ -259,7 +260,8 @@ Proyecto-VectorIA/
 │   ├── ann_acciones_preprocesado.pkl
 │   ├── ann_columns.pkl
 │   ├── mobilenet_mosquitos.keras
-│   ├── mobilenet_mosquitos_ma.keras   (la de la app: reentrenada con Mosquito Alert)
+│   ├── mobilenet_mosquitos_ma.keras   (reentrenada con Mosquito Alert, solo la capa final)
+│   ├── mobilenet_mosquitos_ma_ft.keras   (la de la app: Mosquito Alert y ajuste fino)
 │   ├── cnn_mosquitos.keras
 │   ├── cnn_mosquitos_mejorada.keras
 │   ├── cnn_mosquitos_v2.keras
@@ -410,7 +412,7 @@ Aunque VectorIA integra los tres modelos y permite utilizarlos desde una aplicac
 - La ANN se entrenó con escenarios simulados y etiquetas generadas con reglas, no con decisiones reales de las autoridades sanitarias.
 - El año de validación del Módulo 2 (2022) no tuvo brote; con un año que incluya un brote, la comparación entre SimpleRNN y LSTM podría cambiar.
 - Ninguna red del Módulo 2 supera a la persistencia (repetir la última semana), y las dos subestiman los brotes.
-- La prueba de la CNN tiene solo 8 fotos de Culex, y cada especie viene sobre todo de una fuente distinta, así que la red podría estar aprendiendo la fuente además del mosquito. Por ejemplo, de las 3 fotos de prueba de *aegypti* con fondo blanco (Mendeley), el mismo fondo de las fotos de *Culex*, MobileNetV2 clasificó 2 como *Culex* y la CNN propia con recorte, las 3. Reentrenar MobileNetV2 con fotos de Mosquito Alert lo redujo mucho, pero *aegypti* con fondos variados sigue siendo difícil (2 de 7 aciertos): Mosquito Alert solo tiene 47 fotos de esa especie.
+- La prueba de la CNN tiene solo 8 fotos de Culex, y cada especie viene sobre todo de una fuente distinta, así que la red podría estar aprendiendo la fuente además del mosquito. Por ejemplo, de las 3 fotos de prueba de *aegypti* con fondo blanco (Mendeley), el mismo fondo de las fotos de *Culex*, MobileNetV2 clasificó 2 como *Culex* y la CNN propia con recorte, las 3. Reentrenar MobileNetV2 con fotos de Mosquito Alert lo redujo mucho, pero *aegypti* con fondos variados sigue siendo difícil (0 de 7 aciertos en prueba): Mosquito Alert solo tiene 47 fotos de esa especie.
 - La lluvia de NASA POWER se estima con un modelo, no con estaciones. La semana del 26 de mayo de 2024 marca 625 mm, pero ni ERA5 ni las estaciones del IMN registran esa lluvia: es un error de la fuente. Se dejó documentado sin cambiar los datos; su efecto en el pronóstico es pequeño (RMSE de 260.2 a 255.4 si se corrige).
 - Los datos cantonales presentan diferencias respecto al total nacional y se utilizan para comparaciones entre cantones.
 - El conjunto de datos sintético no representa cifras oficiales. Solo se usa en el EDA y en el bonus por provincia, cuyos resultados muestran que el método funciona, no que pronostique el dengue real de cada provincia.

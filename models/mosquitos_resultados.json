@@ -171,7 +171,7 @@
             "MobileNetV2 actual": 0.6999,
             "MobileNetV2 con Mosquito Alert": 0.8606
         },
-        "modelo_para_la_app": "mobilenet_mosquitos_ma.keras",
+        "modelo_para_la_app": "mobilenet_mosquitos_ma_ft.keras",
         "prueba": {
             "MobileNetV2 actual | Kaggle y Mendeley (247)": {
                 "f1_macro": 0.8533,
@@ -323,6 +323,170 @@
                     ]
                 ]
             }
+        },
+        "ajuste_fino": {
+            "descripcion": "Ajuste fino de las últimas capas de MobileNetV2 con aumento de datos (sección 6.8 del notebook 02)",
+            "f1_validacion": {
+                "capa final (6.3)": 0.8606,
+                "ajuste fino (6.8)": 0.8942
+            },
+            "prueba": {
+                "MobileNetV2 con Mosquito Alert (6.3) | Kaggle y Mendeley (247)": {
+                    "f1_macro": 0.8422,
+                    "aciertos": {
+                        "aegypti": "110/123",
+                        "albopictus": "99/120",
+                        "culex": "4/4"
+                    },
+                    "matriz_confusion": [
+                        [
+                            110,
+                            12,
+                            1
+                        ],
+                        [
+                            20,
+                            99,
+                            1
+                        ],
+                        [
+                            0,
+                            0,
+                            4
+                        ]
+                    ]
+                },
+                "MobileNetV2 con Mosquito Alert (6.3) | Mosquito Alert (128)": {
+                    "f1_macro": 0.7005,
+                    "aciertos": {
+                        "aegypti": "2/7",
+                        "albopictus": "50/61",
+                        "culex": "58/60"
+                    },
+                    "matriz_confusion": [
+                        [
+                            2,
+                            5,
+                            0
+                        ],
+                        [
+                            3,
+                            50,
+                            8
+                        ],
+                        [
+                            0,
+                            2,
+                            58
+                        ]
+                    ]
+                },
+                "MobileNetV2 con Mosquito Alert (6.3) | Fondo blanco, Mendeley (7)": {
+                    "f1_macro": 0.463,
+                    "aciertos": {
+                        "aegypti": "1/3",
+                        "albopictus": "0/0",
+                        "culex": "4/4"
+                    },
+                    "matriz_confusion": [
+                        [
+                            1,
+                            1,
+                            1
+                        ],
+                        [
+                            0,
+                            0,
+                            0
+                        ],
+                        [
+                            0,
+                            0,
+                            4
+                        ]
+                    ]
+                },
+                "MobileNetV2 con ajuste fino (6.8) | Kaggle y Mendeley (247)": {
+                    "f1_macro": 0.8746,
+                    "aciertos": {
+                        "aegypti": "113/123",
+                        "albopictus": "116/120",
+                        "culex": "4/4"
+                    },
+                    "matriz_confusion": [
+                        [
+                            113,
+                            8,
+                            2
+                        ],
+                        [
+                            3,
+                            116,
+                            1
+                        ],
+                        [
+                            0,
+                            0,
+                            4
+                        ]
+                    ]
+                },
+                "MobileNetV2 con ajuste fino (6.8) | Mosquito Alert (128)": {
+                    "f1_macro": 0.5943,
+                    "aciertos": {
+                        "aegypti": "0/7",
+                        "albopictus": "54/61",
+                        "culex": "57/60"
+                    },
+                    "matriz_confusion": [
+                        [
+                            0,
+                            5,
+                            2
+                        ],
+                        [
+                            0,
+                            54,
+                            7
+                        ],
+                        [
+                            0,
+                            3,
+                            57
+                        ]
+                    ]
+                },
+                "MobileNetV2 con ajuste fino (6.8) | Fondo blanco, Mendeley (7)": {
+                    "f1_macro": 0.4333,
+                    "aciertos": {
+                        "aegypti": "1/3",
+                        "albopictus": "0/0",
+                        "culex": "4/4"
+                    },
+                    "matriz_confusion": [
+                        [
+                            1,
+                            0,
+                            2
+                        ],
+                        [
+                            0,
+                            0,
+                            0
+                        ],
+                        [
+                            0,
+                            0,
+                            4
+                        ]
+                    ]
+                }
+            }
+        },
+        "f1_prueba_app": {
+            "Kaggle y Mendeley (247)": 0.8746,
+            "Mosquito Alert (128)": 0.5943,
+            "Fondo blanco, Mendeley (7)": 0.4333
         }
     }
 }

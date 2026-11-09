@@ -1,12 +1,30 @@
 {
     "cnn_propia": {
-        "modelo": "cnn_mosquitos.keras",
-        "f1_macro": 0.5397,
+        "modelo": "cnn_mosquitos_mejorada.keras",
+        "version": "CNN propia sugerida + aumento",
+        "f1_macro": 0.5029,
         "f1_por_clase": {
-            "aegypti": 0.14,
-            "albopictus": 0.64,
+            "aegypti": 0.0,
+            "albopictus": 0.67,
             "culex": 0.84
-        }
+        },
+        "matriz_confusion": [
+            [
+                0,
+                120,
+                3
+            ],
+            [
+                0,
+                120,
+                0
+            ],
+            [
+                0,
+                0,
+                8
+            ]
+        ]
     },
     "mobilenetv2": {
         "modelo": "mobilenet_mosquitos.keras",
@@ -15,7 +33,24 @@
             "aegypti": 0.87,
             "albopictus": 0.89,
             "culex": 0.89
-        }
+        },
+        "matriz_confusion": [
+            [
+                103,
+                18,
+                2
+            ],
+            [
+                10,
+                110,
+                0
+            ],
+            [
+                0,
+                0,
+                8
+            ]
+        ]
     },
     "evaluacion": {
         "conjunto": "test",
@@ -25,6 +60,7 @@
             "albopictus",
             "culex"
         ],
-        "meta_f1_macro": 0.85
+        "meta_f1_macro": 0.85,
+        "calculado_en": "notebooks/02_CNN_Mosquitos.ipynb, sección 4"
     }
 }

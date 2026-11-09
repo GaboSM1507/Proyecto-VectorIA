@@ -92,9 +92,9 @@ El primer módulo utiliza una red neuronal convolucional (CNN), especializada en
 
 Se desarrolló una CNN propia desde cero y se realizó una comparación con MobileNetV2, una arquitectura que utiliza aprendizaje por transferencia.
 
-La evaluación se realizó con un conjunto de prueba de 251 imágenes: 123 de Aedes aegypti, 120 de Aedes albopictus y 8 de Culex. Todo el módulo está en el notebook `02_CNN_Mosquitos.ipynb`: el análisis de las imágenes y la separación entre entrenamiento y prueba (secciones 1 a 3), y el entrenamiento y la evaluación (sección 4). La sección 4 agrega una CNN propia mejorada, también desde cero: fotos de 192 × 192, dos capas convolucionales por bloque, BatchNormalization y más aumento de datos. También elige la CNN propia solo con los datos de validación y evalúa una sola vez en prueba.
+La evaluación se realizó con un conjunto de prueba de 251 imágenes: 123 de Aedes aegypti, 120 de Aedes albopictus y 8 de Culex. Todo el módulo está en el notebook `02_CNN_Mosquitos.ipynb`: el análisis de las imágenes y la separación entre entrenamiento y prueba (secciones 1 a 3), el entrenamiento y la evaluación (sección 4) y un experimento con las fotos recortadas alrededor del mosquito (sección 5). La sección 4 agrega una CNN propia mejorada, también desde cero: fotos de 192 × 192, dos capas convolucionales por bloque, BatchNormalization y más aumento de datos. También elige la CNN propia solo con los datos de validación y evalúa una sola vez en prueba.
 
-Las cifras de esta sección se calcularon en la sección 4 y están en `models/mosquitos_resultados.json`, junto con las matrices de confusión. Antes, el F1 de la CNN propia (53.97 %) estaba escrito a mano y no se sabía de qué modelo era.
+Las cifras de esta sección se calcularon en las secciones 4 y 5 del notebook y están en `models/mosquitos_resultados.json`, junto con las matrices de confusión. Antes, el F1 de la CNN propia (53.97 %) estaba escrito a mano y no se sabía de qué modelo era.
 
 **Elección de la CNN propia (F1 macro en validación):**
 
@@ -124,9 +124,23 @@ Se eligió la CNN propia con aumento de datos, la de mayor F1 en validación. La
 
 El F1 combina la precisión y el recall de cada especie, y el F1 macro es el promedio simple de las tres, para que la clase con menos fotos (Culex) pese lo mismo que las demás.
 
-MobileNetV2 obtuvo el mejor resultado, superando el objetivo establecido del 85 % de F1 macro. Por esta razón, se utiliza como modelo principal para la identificación de mosquitos dentro del sistema.
+En esta evaluación, MobileNetV2 obtuvo el mejor resultado, superando el objetivo establecido del 85 % de F1 macro. Por esta razón, se utiliza como modelo principal para la identificación de mosquitos dentro del sistema.
 
-La CNN propia se conserva como parte de la comparación experimental. No reconoce Aedes aegypti, justamente la especie que transmite el dengue: la matriz de confusión muestra que respondió Aedes albopictus en 120 de las 123 fotos de aegypti. No es por falta de fotos de esa especie, que es la que más tiene. Las dos especies de Aedes se distinguen por el dibujo de escamas blancas del tórax, y en las fotos de Kaggle el mosquito ocupa una parte pequeña de una foto de unos 2464 × 3280 píxeles. Al reducirla a 128 o 192 píxeles ese detalle casi desaparece, y una red entrenada desde cero con unas 840 fotos no logra aprenderlo. Por ejemplo, la v2 llegó a 95 % de aciertos en entrenamiento, pero en validación no separa las dos especies: memoriza las fotos de entrenamiento en lugar de aprender el dibujo del tórax. MobileNetV2, que ya trae lo aprendido con millones de imágenes, sí las separa: acierta 103 de las 123 fotos de aegypti y 110 de las 120 de albopictus.
+En esta evaluación, la CNN propia no reconocía Aedes aegypti, justamente la especie que transmite el dengue: la matriz de confusión muestra que respondió Aedes albopictus en 120 de las 123 fotos de aegypti. No es por falta de fotos de esa especie, que es la que más tiene. Las dos especies de Aedes se distinguen por el dibujo de escamas blancas del tórax, y en las fotos de Kaggle el mosquito ocupa una parte pequeña de una foto de unos 2464 × 3280 píxeles. Al reducirla a 128 o 192 píxeles ese detalle casi desaparece, y una red entrenada desde cero con unas 840 fotos no logra aprenderlo. Por ejemplo, la v2 llegó a 95 % de aciertos en entrenamiento, pero en validación no separa las dos especies: memoriza las fotos de entrenamiento en lugar de aprender el dibujo del tórax. MobileNetV2, que ya trae lo aprendido con millones de imágenes, sí las separa: acierta 103 de las 123 fotos de aegypti y 110 de las 120 de albopictus.
+
+**CNN propia con recorte (sección 5 del notebook 02).** Para resolver ese problema, cada foto se recorta alrededor del mosquito antes de reducirla: se toma como color del fondo la mediana de la foto, los píxeles que se alejan mucho de ese color forman manchas, y se recorta un cuadrado alrededor de la mancha más grande que no toca el borde. El recorte no usa la especie y es igual para entrenamiento, validación y prueba; encontró el mosquito en las 1,235 fotos. Con los recortes se entrenó la misma red v2, desde cero, a 128 × 128, y la mejor época se eligió con el F1 macro en validación (no con la pérdida).
+
+Las 22 fotos de Culex de IEEE DataPort no se pudieron volver a descargar, porque la página pide una suscripción de pago. Por eso el experimento usa las otras 1,235 fotos con la misma separación: la prueba tiene 247 fotos (123 aegypti, 120 albopictus y 4 Culex), y la validación queda sin Culex, así que su F1 se calcula con aegypti y albopictus. Todos los modelos se evaluaron con las mismas fotos.
+
+| Modelo (mismas 247 fotos de prueba) | F1 macro | F1 aegypti | F1 albopictus | F1 Culex |
+|---|---:|---:|---:|---:|
+| **CNN propia con recorte** | **88.00 %** | 0.95 | 0.96 | 0.73 |
+| MobileNetV2 | 85.33 % | 0.87 | 0.89 | 0.80 |
+| CNN propia de la sección 4 | 46.46 % | 0.00 | 0.67 | 0.73 |
+
+La CNN propia con recorte se eligió con validación (F1 de 0.956, en la época 38 de 40) y se evaluó una sola vez en prueba. **Supera la meta del 85 %** y separa bien las dos especies de Aedes: acierta 112 de 123 aegypti (8 las confunde con albopictus y 3 con Culex), 119 de 120 albopictus y las 4 Culex. Las 3 que llamó Culex son justo las 3 fotos de aegypti de Mendeley, que tienen el mismo fondo blanco que las de Culex: para reconocer Culex, la red se apoya en parte en el fondo. Hay que leer este resultado con sus límites: con solo 4 fotos de Culex, el F1 de esa especie (0.73) depende de 3 errores; el F1 en validación saltó mucho de una época a otra, así que podría cambiar con otra semilla; y la idea del recorte surgió de la matriz de confusión de la prueba, aunque la validación ya mostraba el mismo problema.
+
+La aplicación sigue usando MobileNetV2, porque recibe la foto completa, mientras que el recorte depende de un fondo parejo como el de las fotos de Kaggle.
 
 ### 5.2. Modelo RNN: pronóstico de casos de dengue
 
@@ -284,7 +298,7 @@ La aplicación cuenta con cinco pestañas:
 
 Los resultados obtenidos permiten identificar el desempeño de cada uno de los modelos:
 
-- **CNN:** MobileNetV2 alcanzó un F1 macro de 88.30 %, superando el objetivo del 85 %.
+- **CNN:** MobileNetV2 alcanzó un F1 macro de 88.30 %, superando el objetivo del 85 %. La CNN propia lo supera solo con las fotos recortadas alrededor del mosquito: 88.00 % (contra 85.33 % de MobileNetV2 en las mismas 247 fotos).
 - **RNN:** SimpleRNN obtuvo un RMSE de 260 y un MAE de 175, el menor error entre las dos redes y muy por debajo de la línea base estacional (638). Aun así, no supera a la persistencia (216), salvo a 4 semanas de distancia.
 - **ANN:** alcanzó una exactitud promedio de 90.8 %, aunque la categoría de eliminación de criaderos todavía necesita mejoras.
 - **Bonus por provincia (datos sintéticos):** RMSE de 27.8 y MAE de 15.4, por debajo de la línea base estacional (49.0) y de la persistencia (35.3).
@@ -295,7 +309,7 @@ En conjunto, los resultados demuestran que los modelos pueden aportar herramient
 
 | Parte | Qué pide el enunciado | Resultado | ¿Cumple? |
 |---|---|---|---|
-| Módulo 1 (CNN) | CNN propia desde cero (obligatoria), F1 macro ≥ 85 % | 50.29 % (la mejor de 3 CNN propias, elegida con validación) | No: no logra separar aegypti de albopictus |
+| Módulo 1 (CNN) | CNN propia desde cero (obligatoria), F1 macro ≥ 85 % | Con la foto completa, 50.29 %. Con la foto recortada alrededor del mosquito (sección 5), 88.00 % en 247 fotos de prueba | Sí, con el recorte (sin las 22 fotos de IEEE) |
 | Módulo 1 (CNN) | MobileNetV2 con transfer learning como comparación, F1 macro | 88.30 % | Sí |
 | Módulo 2 (RNN/LSTM) | SimpleRNN (base) y LSTM (principal); RMSE y MAE contra el baseline estacional | SimpleRNN 260 / 175 y LSTM 494 / 334, contra 638 / 456 | Sí: las dos superan al baseline |
 | Módulo 3 (ANN) | Clasificador multiclase, separación por semana, precisión y recall ≥ 85 % | 6 de 8 métricas sobre 85 %; eliminación de criaderos con 0.82 / 0.78 | Parcial |
@@ -312,13 +326,13 @@ En conjunto, los resultados demuestran que los modelos pueden aportar herramient
 
 Durante el desarrollo se identificaron algunas limitaciones que deben considerarse al interpretar los resultados:
 
-- La CNN propia obtuvo un F1 macro de 50.29 %, por lo que no alcanza el objetivo establecido, y no reconoce Aedes aegypti: lo confunde con Aedes albopictus. MobileNetV2 presenta un mejor desempeño.
+- Con la foto completa, la CNN propia obtuvo un F1 macro de 50.29 % y no reconoce Aedes aegypti: lo confunde con Aedes albopictus. Solo supera la meta con las fotos recortadas alrededor del mosquito (88.00 %), un resultado medido sin las 22 fotos de Culex de IEEE DataPort (solo 4 de Culex en prueba) y con un recorte que depende de un fondo parejo como el de Kaggle.
 - La CNN siempre responde una de las tres especies: no tiene una clase para imágenes que no son mosquitos, así que una foto cualquiera también recibe una especie, incluso con una confianza alta.
 - La categoría de eliminación de criaderos del modelo ANN tiene precisión de 82 % y recall de 78 %.
 - La ANN se entrenó con escenarios simulados y etiquetas generadas con reglas, no con decisiones reales de las autoridades sanitarias.
 - El año de validación del Módulo 2 (2022) no tuvo brote. Con un año de validación que incluya un brote, la comparación entre SimpleRNN y LSTM podría cambiar.
 - Ninguna de las dos redes del Módulo 2 supera a la persistencia (repetir la última semana), y las dos subestiman los brotes. Como la ANN decide las alertas con este pronóstico, un pronóstico bajo puede hacer que una alerta no se active.
-- El conjunto de prueba de la CNN tiene solo 8 fotos de Culex, así que el F1 de esa clase es poco confiable: un solo error lo mueve mucho. Además, cada especie viene sobre todo de una fuente distinta (Aedes aegypti y Aedes albopictus de Kaggle, Culex de IEEE DataPort y Mendeley), por lo que la red podría estar aprendiendo el estilo o el fondo de cada fuente y no solo el mosquito.
+- El conjunto de prueba de la CNN tiene solo 8 fotos de Culex, así que el F1 de esa clase es poco confiable: un solo error lo mueve mucho. Además, cada especie viene sobre todo de una fuente distinta (Aedes aegypti y Aedes albopictus de Kaggle, Culex de IEEE DataPort y Mendeley), por lo que la red podría estar aprendiendo el estilo o el fondo de cada fuente y no solo el mosquito. Hay evidencia de esto: las 3 fotos de prueba de Aedes aegypti de Mendeley tienen el mismo fondo blanco que las de Culex, y MobileNetV2 clasificó 2 de ellas como Culex; la CNN propia con recorte, las 3. Son sus únicos errores de aegypti a Culex. Por eso, una foto de aegypti sobre un fondo claro puede salir como Culex.
 - La lluvia de NASA POWER se estima con un modelo (MERRA-2), no con estaciones. La semana del 26 de mayo de 2024 marca 625 mm, la más lluviosa de toda la serie, pero ni ERA5 (entre 14 y 36 mm ese día en las mismas ciudades) ni las estaciones del IMN registran esa lluvia, por lo que se considera un error de la fuente. No se eliminó, para no cambiar los archivos que usan los modelos. Su efecto en el pronóstico es pequeño: cambiando esa semana por el valor de ERA5, el RMSE de la SimpleRNN pasa de 260.2 a 255.4. También afecta la lluvia de 14 días de `vectoria_acciones.csv` en las semanas del 26 de mayo y el 2 de junio de 2024, aunque sus etiquetas no cambian.
 - El archivo `vectoria_dengue_semanal.csv` es sintético y no representa cifras oficiales. Solo se usa en el EDA y en el bonus por provincia, así que los buenos resultados de ese modelo muestran que el método funciona, pero no que pronostique el dengue real de cada provincia. Sus resultados no se mezclan con los del Módulo 2.
 - La información cantonal disponible corresponde al período 2013–2018 y sus totales no coinciden con los datos nacionales. Por ello, la pestaña cantonal debe utilizarse para comparaciones entre cantones dentro de ese conjunto, no para representar directamente los totales nacionales.
@@ -346,7 +360,7 @@ A partir de los resultados, se recomienda a quienes usen VectorIA en la vigilanc
 Para continuar fortaleciendo VectorIA, se proponen las siguientes mejoras:
 
 - Ampliar y mejorar el conjunto de imágenes de mosquitos, por ejemplo con Mosquito Alert, sobre todo para Culex.
-- Mejorar la CNN propia recortando cada foto alrededor del mosquito antes de reducirla, para que se vea el dibujo del tórax que separa aegypti de albopictus, y elegir la mejor época por el F1 macro en validación en lugar de la pérdida.
+- Probar la CNN propia con recorte en fotos de campo, con fondos variados, y repetirla con varias semillas; si se mantiene, llevar el recorte a la API para usarla en la aplicación.
 - Agregar a la CNN una clase para imágenes que no son mosquitos.
 - Mejorar la detección de la categoría de eliminación de criaderos en el modelo ANN.
 - Comparar SimpleRNN y LSTM con un período de validación que incluya un brote.
@@ -363,13 +377,13 @@ Para continuar fortaleciendo VectorIA, se proponen las siguientes mejoras:
 
 VectorIA integra tres modelos de inteligencia artificial para apoyar diferentes etapas de la vigilancia del dengue: identificación de mosquitos, pronóstico de casos y recomendación de acciones preventivas.
 
-Los resultados experimentales muestran que MobileNetV2 alcanzó un F1 macro de 88.30 %, SimpleRNN obtuvo mejores métricas de error que LSTM y la línea base estacional, y el modelo ANN logró una exactitud promedio de 90.8 %.
+Los resultados experimentales muestran que MobileNetV2 alcanzó un F1 macro de 88.30 %, que la CNN propia llegó a 88.00 % al recortar cada foto alrededor del mosquito, SimpleRNN obtuvo mejores métricas de error que LSTM y la línea base estacional, y el modelo ANN logró una exactitud promedio de 90.8 %.
 
 En el pronóstico, la red más simple superó a la más compleja: con pocos datos y sin brotes en el año de validación, la LSTM no logró aprovechar su memoria. Ninguna de las dos superó todavía a la persistencia, lo que deja claro el siguiente paso: más datos y un año de validación con brote. El bonus por provincia apunta en esa dirección: con más ventanas y un año de validación con brote, la misma SimpleRNN sí superó a la persistencia, aunque con datos sintéticos.
 
 La integración mediante FastAPI y Streamlit permite utilizar las funcionalidades desde una aplicación centralizada y facilita la interacción con los modelos.
 
-Aunque existen aspectos que pueden mejorarse, especialmente en la clasificación con la CNN propia, la recomendación de eliminación de criaderos y la calidad y actualización de los datos, el proyecto demuestra cómo la inteligencia artificial puede utilizarse como herramienta de apoyo para la vigilancia y prevención del dengue.
+Aunque existen aspectos que pueden mejorarse, especialmente probar la CNN propia con recorte en fotos de campo, la recomendación de eliminación de criaderos y la calidad y actualización de los datos, el proyecto demuestra cómo la inteligencia artificial puede utilizarse como herramienta de apoyo para la vigilancia y prevención del dengue.
 
 **VectorIA no sustituye el diagnóstico médico ni las decisiones de las autoridades sanitarias. Su propósito es brindar información de apoyo para el análisis y la prevención.**
 
@@ -388,7 +402,7 @@ Aunque existen aspectos que pueden mejorarse, especialmente en la clasificación
 - **Instituto Meteorológico Nacional (IMN):** boletín meteorológico de mayo de 2024.
 - **IEEE DataPort:** [Image Dataset of Aedes and Culex Mosquito Species](https://ieee-dataport.org/open-access/image-dataset-aedes-and-culex-mosquito-species).
 - **Mendeley Data:** [Dataset of Vector Mosquito Images](https://data.mendeley.com/datasets/88s6fvgg2p).
-- **Kaggle:** conjunto de imágenes de mosquitos Aedes.
+- **Kaggle:** [Aedes Mosquitos Dataset](https://www.kaggle.com/datasets/pradeepisawasan/aedes-mosquitos) (Aedes aegypti y Aedes albopictus).
 - **geoBoundaries:** fronteras de los cantones de Costa Rica (dominio público, CC0), usadas en el mapa de la aplicación.
 
 ## 13. Uso de inteligencia artificial

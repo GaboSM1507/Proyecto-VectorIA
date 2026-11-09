@@ -1,9 +1,11 @@
 """Arquitecturas de la CNN (Módulo 1): identifica la especie del mosquito en una foto.
 
 Clases (3): Aedes aegypti, Aedes albopictus y Culex.
-Aquí solo están las redes. El entrenamiento, el F1 macro y el guardado de los modelos
-están en src/train/entrenar_mosquitos.py. El notebook 02_CNN_Mosquitos.ipynb analiza
-las imágenes y arma el inventario con la separación entre entrenamiento y prueba.
+Aquí solo están las redes. Todo lo demás está en notebooks/02_CNN_Mosquitos.ipynb:
+el análisis de las imágenes y la separación entre entrenamiento y prueba (secciones 1 a 3),
+el entrenamiento y la evaluación (sección 4) y la CNN propia con las fotos recortadas
+alrededor del mosquito, que usa crear_cnn_v2 con recortes de 128 x 128 (sección 5).
+src/train/entrenar_mosquitos.py es la versión anterior del entrenamiento.
 
 Las respuestas deben ser números (0, 1, 2), no vectores de unos y ceros.
 """

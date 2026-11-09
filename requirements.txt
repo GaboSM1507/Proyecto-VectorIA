@@ -9,6 +9,8 @@ seaborn==0.13.2
 plotly==7.1.0
 opencv-python==5.0.0.93
 streamlit==1.66.1
+pydeck==0.9.3
+requests
 jupyter==1.1.1
 fastapi==0.162.0
 uvicorn==0.54.0

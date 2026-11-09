@@ -62,5 +62,101 @@
         ],
         "meta_f1_macro": 0.85,
         "calculado_en": "notebooks/02_CNN_Mosquitos.ipynb, sección 4"
+    },
+    "experimento_recorte": {
+        "descripcion": "CNN propia con las fotos recortadas alrededor del mosquito (sección 5 del notebook 02)",
+        "fotos_prueba": 247,
+        "nota": "Sin las 22 fotos de Culex de IEEE DataPort, que no se pudieron volver a descargar; todos los modelos se evaluaron con las mismas fotos.",
+        "f1_validacion_aegypti_albopictus": {
+            "CNN propia sugerida": 0.3348,
+            "CNN propia sugerida + aumento": 0.3443,
+            "CNN propia v2": 0.3693,
+            "CNN propia con recorte": 0.9564,
+            "MobileNetV2": 0.8974
+        },
+        "elegida_con_validacion": "CNN propia con recorte",
+        "prueba": {
+            "CNN propia con recorte": {
+                "modelo": "cnn_mosquitos_recorte.keras",
+                "entrada": "recorte",
+                "f1_macro": 0.88,
+                "f1_por_clase": {
+                    "aegypti": 0.95,
+                    "albopictus": 0.96,
+                    "culex": 0.73
+                },
+                "matriz_confusion": [
+                    [
+                        112,
+                        8,
+                        3
+                    ],
+                    [
+                        1,
+                        119,
+                        0
+                    ],
+                    [
+                        0,
+                        0,
+                        4
+                    ]
+                ]
+            },
+            "CNN propia sugerida + aumento": {
+                "modelo": "cnn_mosquitos_mejorada.keras",
+                "entrada": "foto completa",
+                "f1_macro": 0.4646,
+                "f1_por_clase": {
+                    "aegypti": 0.0,
+                    "albopictus": 0.67,
+                    "culex": 0.73
+                },
+                "matriz_confusion": [
+                    [
+                        0,
+                        120,
+                        3
+                    ],
+                    [
+                        0,
+                        120,
+                        0
+                    ],
+                    [
+                        0,
+                        0,
+                        4
+                    ]
+                ]
+            },
+            "MobileNetV2": {
+                "modelo": "mobilenet_mosquitos.keras",
+                "entrada": "foto completa",
+                "f1_macro": 0.8533,
+                "f1_por_clase": {
+                    "aegypti": 0.87,
+                    "albopictus": 0.89,
+                    "culex": 0.8
+                },
+                "matriz_confusion": [
+                    [
+                        103,
+                        18,
+                        2
+                    ],
+                    [
+                        10,
+                        110,
+                        0
+                    ],
+                    [
+                        0,
+                        0,
+                        4
+                    ]
+                ]
+            }
+        }
     }
 }

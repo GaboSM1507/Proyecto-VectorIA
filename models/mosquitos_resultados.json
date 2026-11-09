@@ -171,7 +171,7 @@
             "MobileNetV2 actual": 0.6999,
             "MobileNetV2 con Mosquito Alert": 0.8606
         },
-        "modelo_para_la_app": "mobilenet_mosquitos_ma_ft.keras",
+        "modelo_para_la_app": "mobilenet_mosquitos_piel.keras",
         "prueba": {
             "MobileNetV2 actual | Kaggle y Mendeley (247)": {
                 "f1_macro": 0.8533,
@@ -484,9 +484,225 @@
             }
         },
         "f1_prueba_app": {
-            "Kaggle y Mendeley (247)": 0.8746,
-            "Mosquito Alert (128)": 0.5943,
-            "Fondo blanco, Mendeley (7)": 0.4333
+            "Kaggle y Mendeley (247)": 0.8407,
+            "Mosquito Alert (128)": 0.6642,
+            "Piel humana (113)": 0.8077,
+            "Fondo blanco, Mendeley (7)": 0.4722
+        },
+        "piel_humana": {
+            "descripcion": "Ajuste fino con fotos de mosquitos sobre piel humana (sección 6.9 del notebook 02)",
+            "fuente": "Mosquito-on-human-skin (Ong y Ahmad, 2022), Mendeley Data 10.17632/zw4p9kj6nt.2, CC BY 4.0",
+            "fotos": {
+                "train": 525,
+                "validación": 112,
+                "prueba": 113
+            },
+            "f1_validacion": {
+                "ajuste fino (6.8)": 0.8094,
+                "con fotos de piel (6.9)": 0.8961
+            },
+            "prueba": {
+                "MobileNetV2 con ajuste fino (6.8) | Kaggle y Mendeley (247)": {
+                    "f1_macro": 0.8746,
+                    "aciertos": {
+                        "aegypti": "113/123",
+                        "albopictus": "116/120",
+                        "culex": "4/4"
+                    },
+                    "matriz_confusion": [
+                        [
+                            113,
+                            8,
+                            2
+                        ],
+                        [
+                            3,
+                            116,
+                            1
+                        ],
+                        [
+                            0,
+                            0,
+                            4
+                        ]
+                    ]
+                },
+                "MobileNetV2 con ajuste fino (6.8) | Mosquito Alert (128)": {
+                    "f1_macro": 0.5943,
+                    "aciertos": {
+                        "aegypti": "0/7",
+                        "albopictus": "54/61",
+                        "culex": "57/60"
+                    },
+                    "matriz_confusion": [
+                        [
+                            0,
+                            5,
+                            2
+                        ],
+                        [
+                            0,
+                            54,
+                            7
+                        ],
+                        [
+                            0,
+                            3,
+                            57
+                        ]
+                    ]
+                },
+                "MobileNetV2 con ajuste fino (6.8) | Piel humana (113)": {
+                    "f1_macro": 0.4681,
+                    "aciertos": {
+                        "aegypti": "0/37",
+                        "albopictus": "35/38",
+                        "culex": "30/38"
+                    },
+                    "matriz_confusion": [
+                        [
+                            0,
+                            31,
+                            6
+                        ],
+                        [
+                            0,
+                            35,
+                            3
+                        ],
+                        [
+                            0,
+                            8,
+                            30
+                        ]
+                    ]
+                },
+                "MobileNetV2 con ajuste fino (6.8) | Fondo blanco, Mendeley (7)": {
+                    "f1_macro": 0.4333,
+                    "aciertos": {
+                        "aegypti": "1/3",
+                        "albopictus": "0/0",
+                        "culex": "4/4"
+                    },
+                    "matriz_confusion": [
+                        [
+                            1,
+                            0,
+                            2
+                        ],
+                        [
+                            0,
+                            0,
+                            0
+                        ],
+                        [
+                            0,
+                            0,
+                            4
+                        ]
+                    ]
+                },
+                "MobileNetV2 con fotos de piel (6.9) | Kaggle y Mendeley (247)": {
+                    "f1_macro": 0.8407,
+                    "aciertos": {
+                        "aegypti": "108/123",
+                        "albopictus": "117/120",
+                        "culex": "3/4"
+                    },
+                    "matriz_confusion": [
+                        [
+                            108,
+                            14,
+                            1
+                        ],
+                        [
+                            2,
+                            117,
+                            1
+                        ],
+                        [
+                            1,
+                            0,
+                            3
+                        ]
+                    ]
+                },
+                "MobileNetV2 con fotos de piel (6.9) | Mosquito Alert (128)": {
+                    "f1_macro": 0.6642,
+                    "aciertos": {
+                        "aegypti": "3/7",
+                        "albopictus": "53/61",
+                        "culex": "48/60"
+                    },
+                    "matriz_confusion": [
+                        [
+                            3,
+                            4,
+                            0
+                        ],
+                        [
+                            7,
+                            53,
+                            1
+                        ],
+                        [
+                            7,
+                            5,
+                            48
+                        ]
+                    ]
+                },
+                "MobileNetV2 con fotos de piel (6.9) | Piel humana (113)": {
+                    "f1_macro": 0.8077,
+                    "aciertos": {
+                        "aegypti": "30/37",
+                        "albopictus": "34/38",
+                        "culex": "27/38"
+                    },
+                    "matriz_confusion": [
+                        [
+                            30,
+                            7,
+                            0
+                        ],
+                        [
+                            4,
+                            34,
+                            0
+                        ],
+                        [
+                            11,
+                            0,
+                            27
+                        ]
+                    ]
+                },
+                "MobileNetV2 con fotos de piel (6.9) | Fondo blanco, Mendeley (7)": {
+                    "f1_macro": 0.4722,
+                    "aciertos": {
+                        "aegypti": "2/3",
+                        "albopictus": "0/0",
+                        "culex": "3/4"
+                    },
+                    "matriz_confusion": [
+                        [
+                            2,
+                            0,
+                            1
+                        ],
+                        [
+                            0,
+                            0,
+                            0
+                        ],
+                        [
+                            1,
+                            0,
+                            3
+                        ]
+                    ]
+                }
+            }
         }
     }
 }

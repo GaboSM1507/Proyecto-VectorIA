@@ -94,20 +94,39 @@ Se desarrolló una CNN propia desde cero y se realizó una comparación con Mobi
 
 La evaluación se realizó con un conjunto de prueba de 251 imágenes: 123 de Aedes aegypti, 120 de Aedes albopictus y 8 de Culex. Todo el módulo está en el notebook `02_CNN_Mosquitos.ipynb`: el análisis de las imágenes y la separación entre entrenamiento y prueba (secciones 1 a 3), y el entrenamiento y la evaluación (sección 4). La sección 4 agrega una CNN propia mejorada, también desde cero: fotos de 192 × 192, dos capas convolucionales por bloque, BatchNormalization y más aumento de datos. También elige la CNN propia solo con los datos de validación y evalúa una sola vez en prueba.
 
-Las cifras de esta sección corresponden a la evaluación registrada antes de agregar la sección 4. Se actualizarán con lo que dé esa sección al correrla con las imágenes.
+Las cifras de esta sección se calcularon en la sección 4 y están en `models/mosquitos_resultados.json`, junto con las matrices de confusión. Antes, el F1 de la CNN propia (53.97 %) estaba escrito a mano y no se sabía de qué modelo era.
 
-**Resultados obtenidos:**
+**Elección de la CNN propia (F1 macro en validación):**
+
+| Modelo | F1 macro en validación |
+|---|---:|
+| CNN propia sugerida | 44.5 % |
+| CNN propia sugerida con aumento de datos | 45.2 % |
+| CNN propia v2 | 24.4 % |
+| MobileNetV2 (comparación) | 86.5 % |
+
+Se eligió la CNN propia con aumento de datos, la de mayor F1 en validación. La v2 se detuvo en la época 14: elegía la mejor época por la pérdida en validación, que saltaba mucho de una época a otra, y quedó con un modelo que en validación responde casi siempre la misma especie (su exactitud en validación se quedó entre 48 % y 52 %, que es la proporción de una sola especie).
+
+**Resultados en prueba (evaluados una sola vez):**
 
 | Modelo | F1 macro | F1 aegypti | F1 albopictus | F1 Culex |
 |---|---:|---:|---:|---:|
-| CNN propia | 53.97 % | 0.14 | 0.64 | 0.84 |
+| CNN propia (sugerida con aumento de datos) | 50.29 % | 0.00 | 0.67 | 0.84 |
 | MobileNetV2 | 88.30 % | 0.87 | 0.89 | 0.89 |
+
+**Matrices de confusión en prueba** (filas: especie correcta; columnas: lo que respondió la red, en el orden aegypti / albopictus / Culex):
+
+| Especie correcta | CNN propia | MobileNetV2 |
+|---|---|---|
+| Aedes aegypti (123) | 0 / 120 / 3 | 103 / 18 / 2 |
+| Aedes albopictus (120) | 0 / 120 / 0 | 10 / 110 / 0 |
+| Culex (8) | 0 / 0 / 8 | 0 / 0 / 8 |
 
 El F1 combina la precisión y el recall de cada especie, y el F1 macro es el promedio simple de las tres, para que la clase con menos fotos (Culex) pese lo mismo que las demás.
 
 MobileNetV2 obtuvo el mejor resultado, superando el objetivo establecido del 85 % de F1 macro. Por esta razón, se utiliza como modelo principal para la identificación de mosquitos dentro del sistema.
 
-La CNN propia se conserva como parte de la comparación experimental. Su punto más débil es Aedes aegypti (F1 de 0.14), justamente la especie que transmite el dengue. No es por falta de fotos de esa especie, que es la que más tiene (492 para entrenar). Lo más probable es que la confunda con Aedes albopictus, que se le parece mucho, pero para confirmarlo hace falta la matriz de confusión de la CNN propia en prueba, que no quedó guardada. MobileNetV2, que ya trae lo aprendido con millones de imágenes, sí logra separar las dos especies.
+La CNN propia se conserva como parte de la comparación experimental. No reconoce Aedes aegypti, justamente la especie que transmite el dengue: la matriz de confusión muestra que respondió Aedes albopictus en 120 de las 123 fotos de aegypti. No es por falta de fotos de esa especie, que es la que más tiene. Las dos especies de Aedes se distinguen por el dibujo de escamas blancas del tórax, y en las fotos de Kaggle el mosquito ocupa una parte pequeña de una foto de unos 2464 × 3280 píxeles. Al reducirla a 128 o 192 píxeles ese detalle casi desaparece, y una red entrenada desde cero con unas 840 fotos no logra aprenderlo. Por ejemplo, la v2 llegó a 95 % de aciertos en entrenamiento, pero en validación no separa las dos especies: memoriza las fotos de entrenamiento en lugar de aprender el dibujo del tórax. MobileNetV2, que ya trae lo aprendido con millones de imágenes, sí las separa: acierta 103 de las 123 fotos de aegypti y 110 de las 120 de albopictus.
 
 ### 5.2. Modelo RNN: pronóstico de casos de dengue
 
@@ -276,7 +295,7 @@ En conjunto, los resultados demuestran que los modelos pueden aportar herramient
 
 | Parte | Qué pide el enunciado | Resultado | ¿Cumple? |
 |---|---|---|---|
-| Módulo 1 (CNN) | CNN propia desde cero (obligatoria), F1 macro ≥ 85 % | 53.97 % | No. Se agregó una CNN propia mejorada (sección 4 del notebook 02), pendiente de correr con las imágenes |
+| Módulo 1 (CNN) | CNN propia desde cero (obligatoria), F1 macro ≥ 85 % | 50.29 % (la mejor de 3 CNN propias, elegida con validación) | No: no logra separar aegypti de albopictus |
 | Módulo 1 (CNN) | MobileNetV2 con transfer learning como comparación, F1 macro | 88.30 % | Sí |
 | Módulo 2 (RNN/LSTM) | SimpleRNN (base) y LSTM (principal); RMSE y MAE contra el baseline estacional | SimpleRNN 260 / 175 y LSTM 494 / 334, contra 638 / 456 | Sí: las dos superan al baseline |
 | Módulo 3 (ANN) | Clasificador multiclase, separación por semana, precisión y recall ≥ 85 % | 6 de 8 métricas sobre 85 %; eliminación de criaderos con 0.82 / 0.78 | Parcial |
@@ -293,7 +312,7 @@ En conjunto, los resultados demuestran que los modelos pueden aportar herramient
 
 Durante el desarrollo se identificaron algunas limitaciones que deben considerarse al interpretar los resultados:
 
-- La CNN propia obtuvo un F1 macro de 53.97 %, por lo que no alcanza el objetivo establecido, y casi no reconoce Aedes aegypti (F1 de 0.14). MobileNetV2 presenta un mejor desempeño.
+- La CNN propia obtuvo un F1 macro de 50.29 %, por lo que no alcanza el objetivo establecido, y no reconoce Aedes aegypti: lo confunde con Aedes albopictus. MobileNetV2 presenta un mejor desempeño.
 - La CNN siempre responde una de las tres especies: no tiene una clase para imágenes que no son mosquitos, así que una foto cualquiera también recibe una especie, incluso con una confianza alta.
 - La categoría de eliminación de criaderos del modelo ANN tiene precisión de 82 % y recall de 78 %.
 - La ANN se entrenó con escenarios simulados y etiquetas generadas con reglas, no con decisiones reales de las autoridades sanitarias.
@@ -327,7 +346,7 @@ A partir de los resultados, se recomienda a quienes usen VectorIA en la vigilanc
 Para continuar fortaleciendo VectorIA, se proponen las siguientes mejoras:
 
 - Ampliar y mejorar el conjunto de imágenes de mosquitos, por ejemplo con Mosquito Alert, sobre todo para Culex.
-- Optimizar la CNN propia para aumentar su capacidad de clasificación. La sección 4 del notebook 02 ya incluye una versión mejorada.
+- Mejorar la CNN propia recortando cada foto alrededor del mosquito antes de reducirla, para que se vea el dibujo del tórax que separa aegypti de albopictus, y elegir la mejor época por el F1 macro en validación en lugar de la pérdida.
 - Agregar a la CNN una clase para imágenes que no son mosquitos.
 - Mejorar la detección de la categoría de eliminación de criaderos en el modelo ANN.
 - Comparar SimpleRNN y LSTM con un período de validación que incluya un brote.

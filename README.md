@@ -53,12 +53,14 @@ Todo el Módulo 1 está en `notebooks/02_CNN_Mosquitos.ipynb`: el análisis de l
 
 | Modelo | F1-score macro | F1 aegypti | F1 albopictus | F1 Culex |
 |---|---:|---:|---:|---:|
-| CNN propia | 53.97 % | 0.14 | 0.64 | 0.84 |
+| CNN propia (sugerida con aumento de datos) | 50.29 % | 0.00 | 0.67 | 0.84 |
 | MobileNetV2 | 88.30 % | 0.87 | 0.89 | 0.89 |
+
+Las cifras se calcularon en la sección 4 del notebook 02 y están en `models/mosquitos_resultados.json`, con las matrices de confusión. Antes de esa sección, el 53.97 % de la CNN propia estaba escrito a mano y no se sabía de qué modelo era. Se midieron tres CNN propias en validación: la sugerida (44.5 %), la sugerida con aumento de datos (45.2 %) y la v2 (24.4 %). Se eligió la de aumento de datos y se evaluó una sola vez en prueba.
 
 MobileNetV2 obtuvo el mejor resultado y superó la meta establecida del 85 %. Por esta razón, se utiliza como modelo principal para la identificación de mosquitos en la aplicación.
 
-La CNN propia se conserva como modelo de comparación. Casi no reconoce *Aedes aegypti* (F1 de 0.14), justamente la especie que transmite el dengue.
+La CNN propia no alcanza la meta y no reconoce *Aedes aegypti*, justamente la especie que transmite el dengue: en prueba respondió *albopictus* en 120 de las 123 fotos de *aegypti* y *Culex* en las otras 3. Las dos especies de *Aedes* se distinguen por el dibujo de escamas blancas del tórax. En las fotos de Kaggle el mosquito ocupa una parte pequeña de una foto de unos 2464 × 3280 píxeles, así que al reducirla a 128 o 192 píxeles ese detalle casi desaparece. MobileNetV2, con lo que aprendió de millones de imágenes, sí las separa: acierta 103 de las 123 fotos de *aegypti*.
 
 ### Módulo 2. Pronóstico de casos de dengue (RNN/LSTM)
 
@@ -390,7 +392,7 @@ Aunque VectorIA integra los tres modelos y permite utilizarlos desde una aplicac
 
 ## 11. Posibles mejoras futuras
 
-- Mejorar el rendimiento de la CNN propia mediante más imágenes y un mejor balance entre clases.
+- Mejorar la CNN propia recortando cada foto alrededor del mosquito antes de reducirla, para que se vea el dibujo del tórax que separa *aegypti* de *albopictus*, y con más imágenes y mejor balance entre clases.
 - Aumentar la precisión y el recall de la clase eliminación de criaderos en la ANN.
 - Incorporar nuevos datos epidemiológicos y climáticos.
 - Ampliar las visualizaciones para facilitar el análisis de los resultados.

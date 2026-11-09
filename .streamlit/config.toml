@@ -1,0 +1,5 @@
+# Tema claro fijo: la app usa fondos claros, y con el modo oscuro de la
+# computadora algunos textos quedaban casi invisibles.
+[theme]
+base = "light"
+primaryColor = "#20A39E"

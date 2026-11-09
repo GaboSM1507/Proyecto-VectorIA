@@ -1,9 +1,12 @@
 
 import os
+import json
 import textwrap
+import unicodedata
 import requests
 import numpy as np
 import pandas as pd
+import pydeck as pdk
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
@@ -462,6 +465,38 @@ def cargar_cantones():
     return df.dropna(
         subset=requeridas
     )
+
+
+def umbral_endemico(df):
+    """
+    Umbral endémico para las 4 semanas que siguen al último registro:
+    percentil 75 de los casos de esas mismas 4 semanas en los 5 años
+    anteriores. Es la misma fórmula de vectoria_acciones.csv, con la
+    que se entrenó la ANN.
+    """
+    ultima = df.iloc[-1]
+    sumas = []
+
+    for k in range(1, 6):
+
+        misma_semana = df.index[
+            (df["anio"] == ultima["anio"] - k)
+            & (df["semana_epi"] == ultima["semana_epi"])
+        ]
+
+        if len(misma_semana) > 0:
+
+            i = misma_semana[0]
+            siguientes = df["casos_dengue"].iloc[i + 1:i + 5]
+
+            if len(siguientes) == 4:
+                sumas.append(float(siguientes.sum()))
+
+    if not sumas:
+        # Sin años anteriores: 4 semanas de casos promedio
+        return float(round(df["casos_dengue"].mean() * 4))
+
+    return max(1.0, float(round(np.percentile(sumas, 75))))
 
 
 # ============================================================
@@ -1191,9 +1226,17 @@ with tab_rnn:
                         )
 
                     with b:
+                        # Texto corto para que quepa en la tarjeta
                         st.metric(
                             "Tendencia general",
-                            str(tendencia)
+                            {
+                                "Ascendente": "↗ Al alza",
+                                "Descendente / Estable": "↘ A la baja"
+                            }.get(str(tendencia), str(tendencia)),
+                            help=(
+                                "Compara el pronóstico de la semana +4 "
+                                "con la última semana registrada."
+                            )
                         )
 
                     with c:
@@ -1231,9 +1274,11 @@ with tab_rnn:
                             )
                         ))
 
+                        # La línea del pronóstico arranca en la última semana real,
+                        # para que no quede un hueco entre las dos
                         fig.add_trace(go.Scatter(
-                            x=etiquetas,
-                            y=predicciones,
+                            x=[fechas[-1]] + list(etiquetas),
+                            y=[historicos[-1]] + list(predicciones),
                             mode="lines+markers",
                             name="Pronóstico",
                             line=dict(
@@ -1241,7 +1286,7 @@ with tab_rnn:
                                 width=3,
                                 dash="dash"
                             ),
-                            marker=dict(size=9)
+                            marker=dict(size=[0] + [9] * len(predicciones))
                         ))
 
                         fig.update_layout(
@@ -1426,11 +1471,19 @@ with tab_ann:
                     "### Indicadores epidemiológicos"
                 )
 
+                umbral_calculado = umbral_endemico(df)
+
                 umbral = st.number_input(
                     "Umbral endémico de referencia",
                     min_value=1.0,
-                    value=282.0,
+                    value=umbral_calculado,
                     step=1.0
+                )
+
+                st.caption(
+                    "Calculado con los datos: percentil 75 de los casos "
+                    "de esas mismas 4 semanas en los 5 años anteriores, "
+                    "igual que en los datos de entrenamiento de la ANN."
                 )
 
                 aegypti = st.checkbox(
@@ -1610,55 +1663,449 @@ with tab_ann:
 
 
 # ============================================================
-# 14. ANÁLISIS CANTONAL
+# 14. MAPA CANTONAL
 # ============================================================
+
+RUTA_MAPA = os.path.join(
+    ROOT_DIR, "data", "raw", "cantones_costa_rica.geojson"
+)
+
+# Los datos (2013-2018) usan el nombre viejo de algunos cantones
+NOMBRES_ANTIGUOS = {
+    "alfaro ruiz": "zarcero",
+    "valverde vega": "sarchi",
+    "coronado": "vazquez de coronado"
+}
+
+# Escala del mapa: pocos casos (turquesa) -> muchos casos (rojo)
+ESCALA_MAPA = [
+    [0.00, "#2EC4B6"],
+    [0.40, "#E9C46A"],
+    [0.70, "#F4A261"],
+    [0.88, "#E76F51"],
+    [1.00, "#E63946"]
+]
+
+FONDO_MAPA = "#0F2236"
+SIN_DATOS = "#2C4258"
+BORDE_MAPA = "#0A1828"
+
+COLORES_PROVINCIA = [
+    "#20A39E", "#247BA0", "#E9A23B", "#DC6262",
+    "#2BB673", "#8E7CC3", "#F2C14E"
+]
+
+# Costa Rica continental (sin la Isla del Coco)
+RANGO_CR = ([-86.0, -82.5], [8.0, 11.25])
+
+
+def clave_canton(nombre):
+    """Nombre en minúscula y sin tildes, para unir los datos con el mapa."""
+    texto = unicodedata.normalize("NFD", str(nombre).lower().strip())
+    texto = "".join(
+        c for c in texto
+        if unicodedata.category(c) != "Mn"
+    )
+    return NOMBRES_ANTIGUOS.get(texto, texto)
+
+
+@st.cache_data
+def cargar_mapa():
+
+    if not os.path.exists(RUTA_MAPA):
+        raise FileNotFoundError(
+            f"No se encontró: {RUTA_MAPA}"
+        )
+
+    with open(RUTA_MAPA, encoding="utf-8") as archivo:
+        return json.load(archivo)
+
+
+def rango_cantones(mapa, claves, margen=0.15):
+    """Longitudes y latitudes que encierran esos cantones (para hacer zoom)."""
+    xs, ys = [], []
+
+    for f in mapa["features"]:
+        if f["id"] in claves:
+            for poligono in f["geometry"]["coordinates"]:
+                for x, y in poligono[0]:
+                    if x > -86:          # deja fuera la Isla del Coco
+                        xs.append(x)
+                        ys.append(y)
+
+    if not xs:
+        return RANGO_CR
+
+    return (
+        [min(xs) - margen, max(xs) + margen],
+        [min(ys) - margen, max(ys) + margen]
+    )
+
+
+def tabla_periodo(datos, nombres_mapa):
+    """Una fila por cantón: casos del periodo y su parte del total."""
+    tabla = (
+        datos.groupby(["clave", "provincia"], as_index=False)["casos_dengue"]
+        .sum()
+        .rename(columns={"casos_dengue": "casos"})
+    )
+
+    total = tabla["casos"].sum()
+
+    tabla["canton"] = tabla["clave"].map(nombres_mapa)
+    tabla["pct"] = tabla["casos"] / total * 100 if total else 0.0
+
+    # Escala logarítmica: si no, solo se verían 3 o 4 cantones
+    tabla["z"] = np.log10(tabla["casos"] + 1)
+
+    return tabla.sort_values(
+        "casos",
+        ascending=False
+    ).reset_index(drop=True)
+
+
+def rango_color(valores_z):
+    """
+    La escala empieza en el 10 % de cantones con menos casos, para que los
+    colores se repartan mejor (los que tienen menos quedan en turquesa).
+    """
+    valores_z = np.asarray(list(valores_z), dtype=float)
+    zmin = float(np.percentile(valores_z, 10))
+    zmax = float(valores_z.max())
+    if zmax - zmin < 0.5:
+        zmin = max(0.0, zmax - 0.5)
+    return zmin, zmax
+
+
+def marcas_escala(zmin, zmax):
+    valores = [
+        v for v in [1, 10, 100, 1000, 10000, 100000]
+        if zmin + 0.15 < np.log10(v + 1) <= zmax + 1e-9
+    ]
+    primera = "0" if zmin < 0.01 else f"≤ {10 ** zmin - 1:,.0f}"
+    return (
+        [zmin] + [float(np.log10(v + 1)) for v in valores],
+        [primera] + [f"{v:,}" for v in valores]
+    )
+
+
+def datos_traza(tabla):
+    return dict(
+        locations=tabla["clave"].tolist(),
+        z=tabla["z"].tolist(),
+        customdata=tabla[["canton", "provincia", "casos", "pct"]].values.tolist()
+    )
+
+
+def figura_mapa(mapa, nombres_mapa, textos_gris, tabla, zrango, rango, cuadros=None):
+
+    claves = list(nombres_mapa)
+    zmin, zmax = zrango
+    marcas = marcas_escala(zmin, zmax)
+
+    fig = go.Figure()
+
+    # Todos los cantones en gris: los que no tienen datos quedan así
+    fig.add_trace(go.Choropleth(
+        geojson=mapa,
+        featureidkey="id",
+        locations=claves,
+        z=[0] * len(claves),
+        colorscale=[[0, SIN_DATOS], [1, SIN_DATOS]],
+        showscale=False,
+        marker_line_color=BORDE_MAPA,
+        marker_line_width=0.7,
+        text=[nombres_mapa[c] for c in claves],
+        customdata=[textos_gris[c] for c in claves],
+        hovertemplate="<b>%{text}</b><br>%{customdata}<extra></extra>"
+    ))
+
+    # Cantones con datos, coloreados según sus casos
+    fig.add_trace(go.Choropleth(
+        geojson=mapa,
+        featureidkey="id",
+        zmin=zmin,
+        zmax=zmax,
+        colorscale=ESCALA_MAPA,
+        marker_line_color=BORDE_MAPA,
+        marker_line_width=0.7,
+        hovertemplate=(
+            "<b>%{customdata[0]}</b><br>"
+            "%{customdata[1]}<br><br>"
+            "<b>%{customdata[2]:,.0f}</b> casos<br>"
+            "%{customdata[3]:.1f} % de la selección"
+            "<extra></extra>"
+        ),
+        colorbar=dict(
+            title=dict(text="Casos", font=dict(color="#D8E9F0")),
+            tickvals=marcas[0],
+            ticktext=marcas[1],
+            tickfont=dict(color="#D8E9F0"),
+            thickness=14,
+            len=0.7,
+            x=0.97,
+            outlinewidth=0
+        ),
+        **datos_traza(tabla)
+    ))
+
+    if cuadros:
+
+        # Un cuadro por año: solo cambian los colores de la segunda capa
+        fig.frames = [
+            go.Frame(
+                name=str(anio),
+                data=[go.Choropleth(**datos_traza(t))],
+                traces=[1]
+            )
+            for anio, t in cuadros.items()
+        ]
+
+        pasos = [
+            dict(
+                label=str(anio),
+                method="animate",
+                args=[[str(anio)], dict(
+                    mode="immediate",
+                    frame=dict(duration=0, redraw=True),
+                    transition=dict(duration=0)
+                )]
+            )
+            for anio in cuadros
+        ]
+
+        fig.update_layout(
+            updatemenus=[dict(
+                type="buttons",
+                direction="left",
+                x=0.02,
+                y=-0.01,
+                xanchor="left",
+                yanchor="top",
+                pad=dict(r=10, t=48),
+                bgcolor="#20A39E",
+                bordercolor="#20A39E",
+                font=dict(color="#0F2236", size=13),
+                buttons=[
+                    dict(
+                        label="▶  Reproducir",
+                        method="animate",
+                        args=[None, dict(
+                            frame=dict(duration=1300, redraw=True),
+                            transition=dict(duration=0),
+                            fromcurrent=True,
+                            mode="immediate"
+                        )]
+                    ),
+                    dict(
+                        label="⏸  Pausa",
+                        method="animate",
+                        args=[[None], dict(
+                            frame=dict(duration=0, redraw=False),
+                            transition=dict(duration=0),
+                            mode="immediate"
+                        )]
+                    )
+                ]
+            )],
+            sliders=[dict(
+                active=0,
+                steps=pasos,
+                x=0.22,
+                y=-0.01,
+                len=0.72,
+                xanchor="left",
+                yanchor="top",
+                pad=dict(t=10, b=10),
+                bgcolor="#2C4258",
+                activebgcolor="#E9C46A",
+                bordercolor="#2C4258",
+                tickcolor="#D8E9F0",
+                font=dict(color="#D8E9F0"),
+                currentvalue=dict(
+                    prefix="Año ",
+                    font=dict(size=26, color="white"),
+                    xanchor="left"
+                )
+            )]
+        )
+
+    fig.update_geos(
+        visible=False,
+        projection_type="mercator",
+        lonaxis_range=rango[0],
+        lataxis_range=rango[1],
+        bgcolor=FONDO_MAPA
+    )
+
+    fig.update_layout(
+        height=760 if cuadros else 640,
+        paper_bgcolor=FONDO_MAPA,
+        margin=dict(l=0, r=0, t=0, b=120 if cuadros else 0),
+        font=dict(family="DM Sans", color="#D8E9F0"),
+        hoverlabel=dict(
+            bgcolor="#102A43",
+            bordercolor="#20A39E",
+            font=dict(color="white", size=13)
+        ),
+        dragmode=False
+    )
+
+    return fig
+
+
+def color_escala(valor):
+    """Color RGB de la escala del mapa para un valor entre 0 y 1."""
+    posiciones = [p for p, _ in ESCALA_MAPA]
+    rgb = [
+        [int(c[i:i + 2], 16) for i in (1, 3, 5)]
+        for _, c in ESCALA_MAPA
+    ]
+    return [
+        int(np.interp(valor, posiciones, [c[k] for c in rgb]))
+        for k in range(3)
+    ]
+
+
+def vista_3d(mapa, tabla, rango):
+    """Cada cantón se levanta según sus casos (pydeck)."""
+    casos = dict(zip(tabla["clave"], tabla["casos"]))
+    provincias = dict(zip(tabla["clave"], tabla["provincia"]))
+    maximo = max(float(tabla["casos"].max()), 1.0) if len(tabla) else 1.0
+    zmin, zmax = rango_color(tabla["z"])
+
+    cantones_3d = []
+
+    for f in mapa["features"]:
+
+        valor = casos.get(f["id"])
+
+        if valor is None:
+            color = [44, 66, 88, 160]
+            altura = 0.0
+            texto = "Sin datos en la selección"
+        else:
+            t = (np.log10(valor + 1) - zmin) / (zmax - zmin)
+            color = color_escala(float(np.clip(t, 0, 1))) + [235]
+            altura = float(np.sqrt(valor / maximo) * 30000)
+            texto = f"{provincias[f['id']]} · {valor:,.0f} casos"
+
+        cantones_3d.append({
+            "type": "Feature",
+            "geometry": f["geometry"],
+            "properties": {
+                "canton": f["properties"]["canton"],
+                "texto": texto,
+                "color": color,
+                "altura": altura
+            }
+        })
+
+    capa = pdk.Layer(
+        "GeoJsonLayer",
+        {"type": "FeatureCollection", "features": cantones_3d},
+        extruded=True,
+        wireframe=False,
+        pickable=True,
+        auto_highlight=True,
+        highlight_color=[255, 255, 255, 90],
+        get_fill_color="properties.color",
+        get_elevation="properties.altura",
+        get_line_color=[10, 24, 40],
+        line_width_min_pixels=1
+    )
+
+    vista = pdk.ViewState(
+        longitude=(rango[0][0] + rango[0][1]) / 2,
+        latitude=(rango[1][0] + rango[1][1]) / 2 - 0.35,
+        zoom=8.0 if rango == RANGO_CR else 9.0,
+        pitch=50,
+        bearing=-15
+    )
+
+    return pdk.Deck(
+        layers=[capa],
+        initial_view_state=vista,
+        # La rueda del mouse baja la página en vez de alejar el mapa
+        views=[pdk.View(
+            type="MapView",
+            controller={"scrollZoom": False, "dragRotate": True}
+        )],
+        map_style="dark",
+        tooltip={
+            "html": "<b>{canton}</b><br>{texto}",
+            "style": {
+                "backgroundColor": "#102A43",
+                "color": "white",
+                "fontFamily": "DM Sans"
+            }
+        }
+    )
+
 
 with tab_mapa:
 
     encabezado(
         "Inteligencia territorial",
-        "Exploración de la distribución histórica de casos por cantón."
+        "Cómo se distribuyó el dengue entre los cantones del país, de 2013 a 2018."
     )
 
     try:
 
-        cantones = cargar_cantones()
+        cantones = cargar_cantones().copy()
+        cantones["anio"] = cantones["anio"].astype(int)
+        cantones["clave"] = cantones["canton"].map(clave_canton)
 
-        col_filtro, col_top = st.columns([1.4, 1])
+        mapa = cargar_mapa()
 
-        with col_filtro:
+        nombres_mapa = {
+            f["id"]: f["properties"]["canton"]
+            for f in mapa["features"]
+        }
 
-            provincias = [
-                "Todas las provincias"
-            ] + sorted(
-                cantones["provincia"].astype(str).unique()
-            )
+        anios = sorted(cantones["anio"].unique())
+        todo_el_periodo = f"{anios[0]}–{anios[-1]} (acumulado)"
+
+        col_prov, col_anio, col_vista = st.columns([1.1, 1.1, 1.5])
+
+        with col_prov:
 
             provincia = st.selectbox(
                 "Provincia",
-                provincias
+                ["Todas las provincias"] + sorted(
+                    cantones["provincia"].astype(str).unique()
+                )
             )
 
-        with col_top:
+        with col_anio:
 
-            top = st.slider(
-                "Cantidad de cantones",
-                min_value=5,
-                max_value=30,
-                value=15
+            periodo = st.selectbox(
+                "Periodo",
+                [todo_el_periodo] + [str(a) for a in anios]
+            )
+
+        with col_vista:
+
+            vista = st.segmented_control(
+                "Vista",
+                ["🗺️ Mapa", "▶️ Animación por año", "🏔️ Vista 3D"],
+                default="🗺️ Mapa",
+                required=True
             )
 
         if provincia != "Todas las provincias":
-
             filtrado = cantones[
                 cantones["provincia"].astype(str) == provincia
             ].copy()
-
         else:
-
             filtrado = cantones.copy()
 
-        if filtrado.empty:
+        if periodo == todo_el_periodo:
+            del_periodo = filtrado
+        else:
+            del_periodo = filtrado[filtrado["anio"] == int(periodo)]
+
+        if del_periodo.empty:
 
             st.warning(
                 "No hay registros para esta selección."
@@ -1666,58 +2113,133 @@ with tab_mapa:
 
         else:
 
-            resumen = (
-                filtrado.groupby(
-                    "canton",
-                    as_index=False
-                )["casos_dengue"]
-                .sum()
-                .sort_values(
-                    "casos_dengue",
-                    ascending=False
+            tabla = tabla_periodo(del_periodo, nombres_mapa)
+
+            # Qué dice el mapa sobre los cantones en gris
+            en_archivo = set(cantones["clave"])
+            en_seleccion = set(filtrado["clave"])
+            textos_gris = {
+                c: (
+                    "Sin datos en el archivo" if c not in en_archivo
+                    else "Fuera de la selección" if c not in en_seleccion
+                    else "Sin datos en este periodo"
                 )
+                for c in nombres_mapa
+            }
+
+            rango = (
+                RANGO_CR if provincia == "Todas las provincias"
+                else rango_cantones(mapa, set(tabla["clave"]))
             )
 
-            total = resumen["casos_dengue"].sum()
+            # ---------------- Indicadores ----------------
 
-            cantidad = resumen["canton"].nunique()
+            total = tabla["casos"].sum()
+            primero = tabla.iloc[0]
+            por_anio = filtrado.groupby("anio")["casos_dengue"].sum()
+            top5 = tabla.head(5)["casos"].sum() / total * 100 if total else 0
 
-            promedio = (
-                total / cantidad
-                if cantidad
-                else 0
-            )
-
-            a, b, c = st.columns(3)
+            a, b, c, d = st.columns(4)
 
             with a:
-
                 tarjeta(
                     "Casos acumulados",
                     f"{total:,.0f}",
-                    "Conjunto seleccionado",
+                    f"{provincia} · {periodo}",
                     C["blue"]
                 )
 
             with b:
-
                 tarjeta(
-                    "Cantones",
-                    str(cantidad),
-                    "Con registros disponibles",
+                    "Cantones con datos",
+                    str(len(tabla)),
+                    "En la selección",
                     C["teal"]
                 )
 
             with c:
-
                 tarjeta(
-                    "Promedio cantonal",
-                    f"{promedio:,.1f}",
-                    "Casos por cantón",
-                    C["green"]
+                    "Cantón más afectado",
+                    primero["canton"],
+                    f"{primero['casos']:,.0f} casos ({primero['pct']:.1f} %)",
+                    C["red"]
+                )
+
+            with d:
+                tarjeta(
+                    "Año más fuerte",
+                    str(int(por_anio.idxmax())),
+                    f"{por_anio.max():,.0f} casos en la selección",
+                    C["orange"]
                 )
 
             st.markdown(" ")
+
+            # ---------------- Mapa ----------------
+
+            if vista == "🏔️ Vista 3D":
+
+                st.pydeck_chart(
+                    vista_3d(mapa, tabla, rango),
+                    height=640
+                )
+
+                st.caption(
+                    "Arrastra para mover el mapa; con clic derecho (o Ctrl + arrastrar) "
+                    "se gira, y con los botones + y − se acerca. "
+                    "La altura de cada cantón crece con sus casos."
+                )
+
+            elif vista == "▶️ Animación por año":
+
+                cuadros = {
+                    anio: tabla_periodo(
+                        filtrado[filtrado["anio"] == anio],
+                        nombres_mapa
+                    )
+                    for anio in anios
+                }
+
+                # La misma escala en todos los años, para poder compararlos
+                zrango = rango_color(
+                    pd.concat([t["z"] for t in cuadros.values()])
+                )
+
+                st.plotly_chart(
+                    figura_mapa(
+                        mapa, nombres_mapa, textos_gris,
+                        cuadros[anios[0]], zrango, rango, cuadros
+                    ),
+                    width="stretch",
+                    theme=None,
+                    config={"displayModeBar": False, "scrollZoom": False}
+                )
+
+                st.caption(
+                    "Presiona «Reproducir» para ver cómo cambian los casos año a año, "
+                    "o mueve la barra. Todos los años usan la misma escala de colores."
+                )
+
+            else:
+
+                st.plotly_chart(
+                    figura_mapa(
+                        mapa, nombres_mapa, textos_gris,
+                        tabla, rango_color(tabla["z"]), rango
+                    ),
+                    width="stretch",
+                    theme=None,
+                    config={"displayModeBar": False, "scrollZoom": False}
+                )
+
+            st.info(
+                f"Los 5 cantones con más casos concentran el **{top5:.0f} %** "
+                f"de los casos de la selección ({provincia.lower()}, {periodo})."
+            )
+
+            st.divider()
+
+            # ---------------- Ranking ----------------
 
             col_grafico, col_tabla = st.columns([1.25, 1])
 
@@ -1727,33 +2249,51 @@ with tab_mapa:
                     "### Cantones con más casos"
                 )
 
-                top_datos = resumen.head(top).sort_values(
-                    "casos_dengue",
+                top = st.slider(
+                    "Cantidad de cantones",
+                    min_value=5,
+                    max_value=30,
+                    value=15
+                )
+
+                top_datos = tabla.head(top).sort_values(
+                    "casos",
                     ascending=True
                 )
 
                 fig = px.bar(
                     top_datos,
-                    x="casos_dengue",
+                    x="casos",
                     y="canton",
                     orientation="h",
-                    color="casos_dengue",
-                    color_continuous_scale=[
-                        "#CDEBE5",
-                        "#20A39E",
-                        "#087F70"
-                    ]
+                    color="z",
+                    color_continuous_scale=ESCALA_MAPA,
+                    range_color=list(rango_color(tabla["z"])),
+                    custom_data=["provincia", "pct"],
+                    text="casos"
+                )
+
+                fig.update_traces(
+                    texttemplate="%{x:,.0f}",
+                    textposition="outside",
+                    cliponaxis=False,
+                    hovertemplate=(
+                        "<b>%{y}</b><br>%{customdata[0]}<br>"
+                        "%{x:,.0f} casos (%{customdata[1]:.1f} %)<extra></extra>"
+                    )
                 )
 
                 fig.update_layout(
                     coloraxis_showscale=False,
                     xaxis_title="Casos acumulados",
-                    yaxis_title=""
+                    yaxis_title="",
+                    # espacio a la derecha para que no se corte el número
+                    xaxis_range=[0, float(top_datos["casos"].max()) * 1.18]
                 )
 
                 st.plotly_chart(
                     estilo_grafico(fig, 480),
-                    use_container_width=True
+                    width="stretch"
                 )
 
             with col_tabla:
@@ -1762,7 +2302,9 @@ with tab_mapa:
                     "### Ranking cantonal"
                 )
 
-                ranking = resumen.head(top).copy()
+                ranking = tabla.head(top)[
+                    ["canton", "provincia", "casos", "pct"]
+                ].copy()
 
                 ranking.insert(
                     0,
@@ -1770,57 +2312,99 @@ with tab_mapa:
                     range(1, len(ranking) + 1)
                 )
 
-                ranking = ranking.rename(
-                    columns={
-                        "canton": "Cantón",
-                        "casos_dengue": "Casos"
-                    }
+                # Mismo formato de miles que el resto de la app (12,066)
+                ranking["casos"] = ranking["casos"].map(
+                    lambda v: f"{v:,.0f}"
                 )
 
                 st.dataframe(
                     ranking,
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True,
-                    height=480
+                    height=520,
+                    column_config={
+                        "Posición": st.column_config.NumberColumn(
+                            "#", width=36
+                        ),
+                        "canton": st.column_config.TextColumn(
+                            "Cantón", width=125
+                        ),
+                        "provincia": st.column_config.TextColumn(
+                            "Provincia", width=95
+                        ),
+                        "casos": st.column_config.TextColumn(
+                            "Casos", width=62
+                        ),
+                        "pct": st.column_config.ProgressColumn(
+                            "% del total",
+                            format="%.1f %%",
+                            min_value=0,
+                            max_value=float(ranking["pct"].max()),
+                            width=110
+                        )
+                    }
                 )
 
             st.divider()
+
+            # ---------------- Evolución anual ----------------
 
             st.markdown(
                 "### Evolución anual"
             )
 
-            evolucion = (
-                filtrado.groupby(
-                    "anio",
-                    as_index=False
-                )["casos_dengue"]
-                .sum()
-                .sort_values("anio")
-            )
+            if provincia == "Todas las provincias":
 
-            fig = px.area(
-                evolucion,
-                x="anio",
-                y="casos_dengue",
-                markers=True,
-                color_discrete_sequence=[C["teal"]]
-            )
+                evolucion = (
+                    filtrado.groupby(["anio", "provincia"], as_index=False)["casos_dengue"]
+                    .sum()
+                )
+
+                fig = px.area(
+                    evolucion,
+                    x="anio",
+                    y="casos_dengue",
+                    color="provincia",
+                    color_discrete_sequence=COLORES_PROVINCIA,
+                    markers=True
+                )
+
+            else:
+
+                evolucion = (
+                    filtrado.groupby("anio", as_index=False)["casos_dengue"]
+                    .sum()
+                )
+
+                fig = px.area(
+                    evolucion,
+                    x="anio",
+                    y="casos_dengue",
+                    markers=True,
+                    color_discrete_sequence=[C["teal"]]
+                )
 
             fig.update_layout(
                 xaxis_title="Año",
-                yaxis_title="Casos registrados"
+                yaxis_title="Casos registrados",
+                legend_title_text="Provincia",
+                hovermode="x unified"
             )
 
+            fig.update_xaxes(dtick=1)
+
             st.plotly_chart(
-                estilo_grafico(fig, 350),
-                use_container_width=True
+                estilo_grafico(fig, 380),
+                width="stretch"
             )
 
             st.caption(
-                "Datos cantonales correspondientes al período "
-                "histórico disponible. No representan necesariamente "
-                "los totales nacionales oficiales."
+                "Datos cantonales de 2013 a 2018. La suma de los cantones no coincide con el "
+                "total nacional, así que sirven para comparar cantones entre sí, no como cifra "
+                "oficial. En gris, los cantones sin datos en el archivo: las cabeceras de "
+                "Alajuela, Cartago, Heredia, Puntarenas y Limón, Dota, Tarrazú, León Cortés, "
+                "Quepos y los cantones nuevos Río Cuarto y Puerto Jiménez. "
+                "Fronteras cantonales: geoBoundaries (dominio público)."
             )
 
     except Exception as e:

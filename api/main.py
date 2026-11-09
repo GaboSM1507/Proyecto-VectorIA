@@ -330,8 +330,10 @@ def predict_rnn(data: RNNForecastInput):
         # D. Escalar los datos
         # ----------------------------------------------------
 
+        # El escalador se entrenó con números sin nombres de columna,
+        # así que se le pasan igual (en el mismo orden): evita un aviso de sklearn
         entrada_escalada = rnn_prep["escalador_X"].transform(
-            df_modelo
+            df_modelo.to_numpy()
         )
 
         # Formato que necesita la red:

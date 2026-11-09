@@ -7,12 +7,13 @@
 | Archivo | Uso | Filas |
 |---|---|---|
 | `vectoria_dengue_nacional_real.csv` | **Real.** Módulo 2 (LSTM): casos + clima, serie nacional | 574 semanas (2014–2024), sin faltantes |
-| `vectoria_casos_cantonal_anual_real.csv` | **Real.** Mapa de calor del dashboard | 422 filas (71 cantones, 2013–2018) |
+| `vectoria_casos_cantonal_anual_real.csv` | **Real.** Mapa de calor del dashboard | 422 filas (72 cantones, 2013–2018) |
+| `cantones_costa_rica.geojson` | Fronteras de los cantones para el mapa (geoBoundaries, dominio público). Lo genera `src/preparar_mapa_cantones.py` | 83 cantones |
 | `vectoria_dengue_semanal.csv` | Sintético. Módulo 2, versión por provincia | 4,382 (7 provincias × 626 semanas, 2014–2025) |
 | `vectoria_acciones.csv` | Módulo 3 (ANN): base real, etiquetas por reglas | 2,060 (412 semanas × 5 escenarios, 2017–2024) |
-| `generar_acciones_real.py` | Regenera `vectoria_acciones.csv` (semilla 42) | — |
-| `generar_sintetico.py` | Regenera el CSV sintético provincial (semilla 42) | — |
-| `construir_dataset_real.py` | Casos reales de OpenDengue + clima real de NASA POWER | — |
+| `generar_acciones_real.py` | Regenera `vectoria_acciones.csv` (semilla 42). *No incluido en el repositorio.* | — |
+| `generar_sintetico.py` | Regenera el CSV sintético provincial (semilla 42). *No incluido en el repositorio.* | — |
+| `construir_dataset_real.py` | Casos reales de OpenDengue + clima real de NASA POWER. *No incluido en el repositorio.* | — |
 
 ## Datos reales (OPS/PAHO vía OpenDengue)
 
@@ -21,9 +22,9 @@
   - Los totales anuales coinciden con los registros anuales de la OPS; por ejemplo, 23,319 en 2016 y 31,259 en 2024.
   - Años de brote: 2016, 2023 y 2024. El pico máximo es de 1,749 casos en la semana 46 de 2023.
   - **Clima:** NASA POWER diario (lluvia corregida, temperatura máxima y mínima a 2 m, humedad relativa) en las 7 cabeceras de provincia, promediado y ponderado por población.
-  - Las semanas de lluvia extrema coinciden con eventos conocidos: el huracán Nate (oct. 2017), Eta (nov. 2020) y la tormenta Sara (nov. 2024). Sirven para hablar de outliers en el EDA.
+  - Las semanas de lluvia extrema coinciden con eventos conocidos: el huracán Nate (oct. 2017), Eta (nov. 2020) y la tormenta Sara (nov. 2024). Sirven para hablar de outliers en el EDA. Excepción: la semana del 26 de mayo de 2024 (625 mm) es un error de NASA POWER, porque ni ERA5 ni las estaciones del IMN registran esa lluvia (ver la sección 10 del EDA).
   - **Hallazgo para el EDA:** la temperatura mínima con unas 6 semanas de rezago es el mejor predictor (r ≈ 0.71 con log(casos)). La lluvia aporta menos (r ≈ 0.34 con 0–2 semanas de rezago).
-  - Para regenerarlo: `python construir_dataset_real.py --opendengue filtered_data_PAHO.csv`
+  - Para regenerarlo: `python construir_dataset_real.py --opendengue filtered_data_PAHO.csv` (el script no está incluido en el repositorio).
 - **`vectoria_casos_cantonal_anual_real.csv`:** casos anuales por cantón.
   - **Ojo:** la suma de los cantones es mayor que el total nacional (en 2013, 81,942 frente a 49,993). Probablemente se deba a una diferencia de definición de caso en la fuente.
   - Úselo para comparar cantones entre sí (proporciones y ranking en el mapa de calor), no como cifra absoluta.

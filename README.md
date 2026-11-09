@@ -62,21 +62,25 @@ La CNN propia se conserva como modelo de comparación.
 
 Este módulo utiliza información histórica de dengue y variables climáticas para estimar los casos de las próximas cuatro semanas.
 
+Los datos son reales: `dengue_procesado.csv` (566 semanas, de 2014 a 2024), generado en el EDA a partir de los casos de OPS/PAHO y el clima de NASA POWER.
+
 Las variables utilizadas incluyen:
 
-- Casos de dengue.
+- Casos de dengue (en logaritmo).
 - Precipitación o lluvia.
 - Temperatura máxima.
 - Temperatura mínima.
 - Humedad relativa.
-- Semana epidemiológica.
+- Semana del año (como seno y coseno).
 
 Se utilizan ventanas de 26 semanas anteriores para generar los pronósticos.
 
-Se entrenaron dos modelos:
+La separación es temporal: entrenamiento hasta 2021, validación con 2022 y prueba con 2023–2024.
 
-- **SimpleRNN:** modelo de referencia.
-- **LSTM:** modelo de memoria a largo plazo.
+Se entrenaron dos modelos, ambos con parada anticipada:
+
+- **SimpleRNN:** SimpleRNN de 32 → 4 salidas (1,412 parámetros). Modelo de referencia.
+- **LSTM:** LSTM de 64 → LSTM de 32 → Dropout 0.2 → 4 salidas (30,980 parámetros). Modelo de memoria a largo plazo.
 
 También se realizó una comparación con un baseline estacional, que utiliza los datos de la misma semana del año anterior.
 
@@ -87,10 +91,16 @@ También se realizó una comparación con un baseline estacional, que utiliza lo
 | SimpleRNN | 260 | 175 |
 | LSTM | 494 | 334 |
 | Baseline estacional | 638 | 456 |
+| Persistencia (repetir la última semana, control) | 216 | 141 |
 
-Los resultados muestran que ambos modelos superaron al baseline estacional. Sin embargo, SimpleRNN obtuvo menores errores que LSTM.
+Los resultados muestran que ambos modelos superaron al baseline estacional, como pide el enunciado. Ninguno supera todavía a la persistencia: la SimpleRNN solo le gana a 4 semanas de distancia (RMSE de 235 contra 279), y las dos redes subestiman los brotes.
 
-Por esta razón, se seleccionó SimpleRNN para realizar los pronósticos dentro de la API y la aplicación. El modelo LSTM se conserva para comparación.
+SimpleRNN obtuvo menores errores que LSTM, por dos razones:
+
+- El año de validación (2022) no tuvo brote, y la parada anticipada detuvo a la LSTM antes de que aprendiera a seguir los brotes de 2023 y 2024.
+- La LSTM tiene unas 22 veces más parámetros que la SimpleRNN y hay pocos datos de entrenamiento (381 ventanas).
+
+Por esta razón, se seleccionó SimpleRNN para realizar los pronósticos dentro de la API y la aplicación. El modelo LSTM se conserva para comparación. El detalle está en `notebooks/03_LSTM_Casos.ipynb`.
 
 ### Módulo 3. Recomendación de acciones preventivas (ANN)
 
@@ -138,11 +148,11 @@ Cuenta con cinco pestañas:
 
 | Pestaña | Funcionalidad |
 |---|---|
-| Resumen | Presenta información general y datos del proyecto. |
-| Identificar mosquito | Permite cargar una imagen y obtener la clasificación mediante CNN. |
-| Pronóstico dengue | Genera un pronóstico de los casos para las próximas cuatro semanas. |
-| Acciones preventivas | Utiliza la ANN para recomendar una acción según las variables ingresadas. |
-| Mapa por cantón | Permite explorar la distribución de los casos mediante visualizaciones cantonales. |
+| Resumen | Presenta el estado de la API y de los modelos, y los casos del último año. |
+| Identificación CNN | Permite cargar una imagen y obtener la clasificación mediante CNN. |
+| Pronóstico RNN | Toma las últimas 26 semanas y pronostica los casos de las próximas cuatro. |
+| Prevención ANN | Utiliza el pronóstico, el clima reciente y el resultado de la CNN para recomendar una acción. |
+| Mapa cantonal | Mapa de Costa Rica coloreado según los casos de cada cantón, con animación de 2013 a 2018, vista 3D, ranking de cantones y evolución anual, con filtros por provincia y año. |
 
 La aplicación conecta los modelos mediante una API desarrollada con FastAPI.
 
@@ -165,13 +175,18 @@ La aplicación conecta los modelos mediante una API desarrollada con FastAPI.
 Proyecto-VectorIA/
 │
 ├── README.md
+├── INFORME_TECNICO.md
+├── USO_DE_IA.md
 ├── requirements.txt
 ├── .gitignore
+├── .streamlit/
+│   └── config.toml        (tema claro de la app)
 │
 ├── data/
 │   ├── raw/
 │   │   ├── vectoria_acciones.csv
 │   │   ├── vectoria_casos_cantonal_anual_real.csv
+│   │   ├── cantones_costa_rica.geojson
 │   │   ├── vectoria_dengue_nacional_real.csv
 │   │   ├── vectoria_dengue_semanal.csv
 │   │   └── LEEME_datos.md
@@ -190,6 +205,7 @@ Proyecto-VectorIA/
 ├── src/
 │   ├── __init__.py
 │   ├── data_prep.py
+│   ├── preparar_mapa_cantones.py
 │   └── train/
 │       ├── ann.py
 │       ├── cnn.py
@@ -222,13 +238,16 @@ Proyecto-VectorIA/
 
 El proyecto utiliza diferentes conjuntos de datos para entrenar y evaluar sus modelos.
 
-| Archivo | Uso |
-|---|---|
-| `vectoria_dengue_nacional_real.csv` | Casos nacionales de dengue y variables climáticas. |
-| `vectoria_acciones.csv` | Datos para entrenar el modelo de recomendaciones. |
-| `vectoria_casos_cantonal_anual_real.csv` | Información para el mapa de calor por cantón. |
-| `vectoria_dengue_semanal.csv` | Datos sintéticos para análisis adicional. |
-| `dengue_procesado.csv` | Serie semanal preparada para el pronóstico. |
+| Archivo | Tipo | Uso |
+|---|---|---|
+| `vectoria_dengue_nacional_real.csv` | Real | Casos nacionales de dengue y variables climáticas. |
+| `dengue_procesado.csv` | Real | Serie semanal preparada en el EDA para el pronóstico (Módulo 2). |
+| `vectoria_acciones.csv` | Mixto | Datos para entrenar el modelo de recomendaciones: casos y clima reales, escenarios simulados y etiquetas generadas con reglas. |
+| `vectoria_casos_cantonal_anual_real.csv` | Real | Comparación de casos por cantón (2013–2018). |
+| `cantones_costa_rica.geojson` | Real | Fronteras de los cantones para el mapa de la app (geoBoundaries, dominio público). Se genera con `src/preparar_mapa_cantones.py`. |
+| `vectoria_dengue_semanal.csv` | Sintético | Solo se analiza en el EDA; ningún modelo lo usa. |
+
+El análisis de todos estos archivos está en `notebooks/01_EDA.ipynb`.
 
 Los datos cantonales se utilizan para comparar la distribución entre cantones. Sus sumas no coinciden con el total nacional, por lo que no deben interpretarse como un total oficial de casos.
 
@@ -333,9 +352,14 @@ Aunque VectorIA integra los tres modelos y permite utilizarlos desde una aplicac
 
 - La CNN propia obtuvo un F1-score macro inferior a la meta establecida. MobileNetV2 presentó mejores resultados.
 - La clase eliminación de criaderos de la ANN obtuvo valores de precisión y recall inferiores al 85 %.
-- La SimpleRNN obtuvo mejores resultados que la LSTM en las evaluaciones realizadas, por lo que fue seleccionada para el pronóstico de la aplicación.
+- La CNN siempre responde una de las tres especies: no tiene una clase para imágenes que no son mosquitos.
+- La ANN se entrenó con escenarios simulados y etiquetas generadas con reglas, no con decisiones reales de las autoridades sanitarias.
+- El año de validación del Módulo 2 (2022) no tuvo brote; con un año que incluya un brote, la comparación entre SimpleRNN y LSTM podría cambiar.
+- Ninguna red del Módulo 2 supera a la persistencia (repetir la última semana), y las dos subestiman los brotes.
+- La prueba de la CNN tiene solo 8 fotos de Culex, y cada especie viene sobre todo de una fuente distinta, así que la red podría estar aprendiendo la fuente además del mosquito.
+- La lluvia de NASA POWER se estima con un modelo, no con estaciones. La semana del 26 de mayo de 2024 marca 625 mm, pero ni ERA5 ni las estaciones del IMN registran esa lluvia: es un error de la fuente. Se dejó documentado sin cambiar los datos; su efecto en el pronóstico es pequeño (RMSE de 260.2 a 255.4 si se corrige).
 - Los datos cantonales presentan diferencias respecto al total nacional y se utilizan para comparaciones entre cantones.
-- El conjunto de datos sintético no representa cifras oficiales.
+- El conjunto de datos sintético no representa cifras oficiales y solo se usa en el EDA.
 - Las recomendaciones generadas son orientativas y deben ser interpretadas por personal capacitado.
 
 ## 11. Posibles mejoras futuras
@@ -352,14 +376,19 @@ Aunque VectorIA integra los tres modelos y permite utilizarlos desde una aplicac
 - **Gabriel:** arquitectura y backend.
 - **Jeremy:** desarrollo del modelo RNN.
 - **Jeriel:** desarrollo del modelo ANN, integración de la API y documentación.
+- **Yanely:** análisis exploratorio de datos (EDA).
+
+El informe técnico completo está en `INFORME_TECNICO.md` y el uso de herramientas de inteligencia artificial está documentado en `USO_DE_IA.md`.
 
 ## 13. Fuentes de información
 
 - **OPS/PAHO:** datos de casos de dengue mediante OpenDengue.
 - **NASA POWER:** información climática.
+- **ERA5 (Copernicus), mediante Open-Meteo, e Instituto Meteorológico Nacional (IMN):** comparación de la lluvia de mayo de 2024.
 - **IEEE DataPort:** imágenes de especies de mosquitos.
 - **Mendeley Data:** conjunto de imágenes de mosquitos vectores.
 - **Kaggle:** conjunto de imágenes de mosquitos Aedes.
+- **geoBoundaries:** fronteras de los cantones de Costa Rica para el mapa (dominio público, CC0).
 
 ---
 

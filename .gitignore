@@ -4,3 +4,5 @@ __pycache__/
 *.pyc
 .ipynb_checkpoints/
 data/raw/images/
+# Fotos de mosquitos para la CNN: pesan mucho y no van en el repositorio
+data/raw/imagenes/

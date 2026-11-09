@@ -2,7 +2,8 @@
 
 Clases (3): Aedes aegypti, Aedes albopictus y Culex.
 Aquí solo están las redes. El entrenamiento, el F1 macro y el guardado de los modelos
-van en el notebook 02_CNN_Mosquitos.ipynb (pendiente).
+están en src/train/entrenar_mosquitos.py. El notebook 02_CNN_Mosquitos.ipynb analiza
+las imágenes y arma el inventario con la separación entre entrenamiento y prueba.
 
 Las respuestas deben ser números (0, 1, 2), no vectores de unos y ceros.
 """

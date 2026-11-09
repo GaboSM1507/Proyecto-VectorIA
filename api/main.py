@@ -1,13 +1,11 @@
 
 import os
 import json
-import io
 import joblib
 import numpy as np
 import pandas as pd
 import tensorflow as tf
 
-from PIL import Image
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel, Field
 from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
@@ -463,17 +461,18 @@ async def predict_mosquito(file: UploadFile = File(...)):
         if not contenido:
             raise ValueError("La imagen está vacía.")
 
-        # Procesar fotografía
-        imagen = Image.open(
-            io.BytesIO(contenido)
-        ).convert("RGB")
-
-        imagen = imagen.resize((128, 128))
-
-        imagen_array = np.asarray(
-            imagen,
-            dtype=np.float32
+        # Procesar fotografía igual que en el entrenamiento
+        # (src/train/entrenar_mosquitos.py): leerla con TensorFlow en RGB
+        # y redimensionarla a 128x128 con tf.image.resize
+        imagen = tf.io.decode_image(
+            contenido,
+            channels=3,
+            expand_animations=False
         )
+
+        imagen = tf.image.resize(imagen, (128, 128))
+
+        imagen_array = imagen.numpy()
 
         # Preprocesamiento de MobileNetV2
         imagen_array = preprocess_input(
@@ -514,6 +513,14 @@ async def predict_mosquito(file: UploadFile = File(...)):
                 for i, p in enumerate(probabilidades)
             }
         }
+
+    except tf.errors.InvalidArgumentError:
+
+        # TensorFlow no pudo leer el archivo como imagen
+        raise HTTPException(
+            status_code=400,
+            detail="No se pudo leer la imagen: el archivo está dañado o no es un JPG o PNG válido."
+        )
 
     except Exception as e:
 

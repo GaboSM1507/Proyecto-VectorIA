@@ -45,18 +45,20 @@ Se desarrollaron y compararon dos modelos:
 1. **CNN propia:** red neuronal construida desde cero.
 2. **MobileNetV2:** modelo que utiliza transferencia de aprendizaje.
 
-La evaluación se realizó mediante la métrica F1-score macro, utilizando un conjunto de prueba de 251 imágenes.
+La evaluación se realizó mediante la métrica F1-score macro, utilizando un conjunto de prueba de 251 imágenes (123 de aegypti, 120 de albopictus y 8 de Culex).
+
+El análisis de las imágenes y la separación entre entrenamiento y prueba están en `notebooks/02_CNN_Mosquitos.ipynb`. El entrenamiento y la evaluación de las dos redes están en `src/train/entrenar_mosquitos.py`.
 
 #### Resultados de la CNN
 
-| Modelo | F1-score macro |
-|---|---:|
-| CNN propia | 53.97 % |
-| MobileNetV2 | 88.30 % |
+| Modelo | F1-score macro | F1 aegypti | F1 albopictus | F1 Culex |
+|---|---:|---:|---:|---:|
+| CNN propia | 53.97 % | 0.14 | 0.64 | 0.84 |
+| MobileNetV2 | 88.30 % | 0.87 | 0.89 | 0.89 |
 
 MobileNetV2 obtuvo el mejor resultado y superó la meta establecida del 85 %. Por esta razón, se utiliza como modelo principal para la identificación de mosquitos en la aplicación.
 
-La CNN propia se conserva como modelo de comparación.
+La CNN propia se conserva como modelo de comparación. Casi no reconoce *Aedes aegypti* (F1 de 0.14), justamente la especie que transmite el dengue.
 
 ### Módulo 2. Pronóstico de casos de dengue (RNN/LSTM)
 

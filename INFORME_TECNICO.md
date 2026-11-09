@@ -92,18 +92,20 @@ El primer módulo utiliza una red neuronal convolucional (CNN), especializada en
 
 Se desarrolló una CNN propia desde cero y se realizó una comparación con MobileNetV2, una arquitectura que utiliza aprendizaje por transferencia.
 
-La evaluación se realizó con un conjunto de prueba de 251 imágenes.
+La evaluación se realizó con un conjunto de prueba de 251 imágenes: 123 de Aedes aegypti, 120 de Aedes albopictus y 8 de Culex. El análisis de las imágenes y la separación entre entrenamiento y prueba están en el notebook `02_CNN_Mosquitos.ipynb`; el entrenamiento y la evaluación de las dos redes, en `src/train/entrenar_mosquitos.py`.
 
 **Resultados obtenidos:**
 
-| Modelo | F1 macro |
-|---|---:|
-| CNN propia | 53.97 % |
-| MobileNetV2 | 88.30 % |
+| Modelo | F1 macro | F1 aegypti | F1 albopictus | F1 Culex |
+|---|---:|---:|---:|---:|
+| CNN propia | 53.97 % | 0.14 | 0.64 | 0.84 |
+| MobileNetV2 | 88.30 % | 0.87 | 0.89 | 0.89 |
+
+El F1 combina la precisión y el recall de cada especie, y el F1 macro es el promedio simple de las tres, para que la clase con menos fotos (Culex) pese lo mismo que las demás.
 
 MobileNetV2 obtuvo el mejor resultado, superando el objetivo establecido del 85 % de F1 macro. Por esta razón, se utiliza como modelo principal para la identificación de mosquitos dentro del sistema.
 
-La CNN propia se conserva como parte de la comparación experimental.
+La CNN propia se conserva como parte de la comparación experimental. Su punto más débil es Aedes aegypti (F1 de 0.14), justamente la especie que transmite el dengue. No es por falta de fotos de esa especie, que es la que más tiene (492 para entrenar). Lo más probable es que la confunda con Aedes albopictus, que se le parece mucho, pero para confirmarlo hace falta la matriz de confusión de la CNN propia en prueba, que no quedó guardada. MobileNetV2, que ya trae lo aprendido con millones de imágenes, sí logra separar las dos especies.
 
 ### 5.2. Modelo RNN: pronóstico de casos de dengue
 
@@ -248,7 +250,7 @@ En conjunto, los resultados demuestran que los modelos pueden aportar herramient
 
 Durante el desarrollo se identificaron algunas limitaciones que deben considerarse al interpretar los resultados:
 
-- La CNN propia obtuvo un F1 macro de 53.97 %, por lo que no alcanza el objetivo establecido. MobileNetV2 presenta un mejor desempeño.
+- La CNN propia obtuvo un F1 macro de 53.97 %, por lo que no alcanza el objetivo establecido, y casi no reconoce Aedes aegypti (F1 de 0.14). MobileNetV2 presenta un mejor desempeño.
 - La CNN siempre responde una de las tres especies: no tiene una clase para imágenes que no son mosquitos, así que una foto cualquiera también recibe una especie, incluso con una confianza alta.
 - La categoría de eliminación de criaderos del modelo ANN tiene precisión de 82 % y recall de 78 %.
 - La ANN se entrenó con escenarios simulados y etiquetas generadas con reglas, no con decisiones reales de las autoridades sanitarias.

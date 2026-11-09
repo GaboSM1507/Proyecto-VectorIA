@@ -406,7 +406,6 @@ Aunque existen aspectos que pueden mejorarse, especialmente probar la CNN propia
 - **Gabriel:** arquitectura y backend.
 - **Jeremy:** Módulo 2 (SimpleRNN y LSTM) e integración del informe.
 - **Jeriel:** modelo ANN, integración de la API y documentación.
-- **Yanely:** análisis exploratorio de datos (EDA).
 
 ## 12. Fuentes de información
 

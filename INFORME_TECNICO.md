@@ -47,7 +47,7 @@ Antes de entrenar los modelos se revisaron los archivos de datos en el notebook 
 | `vectoria_acciones.csv` | Mixto: casos y clima reales, escenarios simulados y etiquetas generadas con reglas | Entrenamiento de la ANN (Módulo 3). |
 | `vectoria_casos_cantonal_anual_real.csv` | Real | Mapa de casos por cantón en la aplicación. |
 | `cantones_costa_rica.geojson` | Fronteras de geoBoundaries (dominio público) | Forma de los 83 cantones para dibujar el mapa. |
-| `vectoria_dengue_semanal.csv` | Sintético | Solo se analiza en el EDA (versión por provincia). Ningún modelo lo usa. |
+| `vectoria_dengue_semanal.csv` | Sintético | Versión por provincia. Se analiza en el EDA y solo lo usa el bonus de pronóstico por provincia (sección 5.4). |
 | Imágenes de mosquitos | IEEE DataPort, Mendeley Data y Kaggle | Entrenamiento y evaluación de la CNN (Módulo 1). |
 
 ### 4.2. Principales hallazgos
@@ -205,6 +205,24 @@ Como las etiquetas salen de reglas, esta exactitud mide qué tan bien la ANN apr
 
 La división de los datos se realizó agrupando por semana, con el propósito de evitar que registros de una misma semana quedaran repartidos entre entrenamiento y prueba.
 
+### 5.4. Bonus: pronóstico por provincia (datos sintéticos)
+
+El enunciado propone como bonus pronosticar los casos por provincia con `vectoria_dengue_semanal.csv`. Ese archivo es **sintético**: lo generó el paquete del curso y no son cifras oficiales. Por eso, este resultado muestra que el método funciona, pero no que la red pronostique el dengue real de cada provincia. Está en el notebook `05_Bonus_Provincias.ipynb`.
+
+- **Datos:** `dengue_provincias_limpio.csv`, generado en el EDA (7 provincias × 626 semanas, de 2014 a 2025, sin valores vacíos).
+- **Modelo:** una sola SimpleRNN para las 7 provincias, con la misma arquitectura de la sección 5.2 (SimpleRNN de 32 → 4 salidas). Además de los casos y el clima, recibe la provincia como variable *one-hot* (una columna por provincia). Con validación se comprobó que esto casi no cambia el resultado (40.5 contra 40.7 de RMSE); se dejó por tener el menor promedio.
+- **Separación temporal:** entrenamiento de 2014 a 2022, validación con 2023 (año con brote) y prueba con 2024–2025 (707 ventanas, 101 por provincia).
+
+| Modelo | RMSE | MAE |
+|---|---:|---:|
+| SimpleRNN por provincia | 27.8 | 15.4 |
+| Línea base estacional | 49.0 | 30.5 |
+| Persistencia (control) | 35.3 | 19.9 |
+
+Los errores son más pequeños que los del modelo nacional porque cada provincia tiene menos casos por semana. La red supera a la línea base estacional en las 7 provincias (entre 29 % y 52 % menos RMSE) y, a diferencia del modelo nacional, también a la persistencia, en las 4 semanas pronosticadas y en las 7 provincias. Con 3 semillas, el RMSE va de 27.2 a 27.8.
+
+Hay tres razones probables para la diferencia con el modelo nacional: hay más datos (3,087 ventanas de entrenamiento contra 381), el año de validación sí tuvo brote, y los datos sintéticos siguen patrones más regulares que los reales. La API lo ofrece en `POST /predict/casos/provincia`, y la aplicación en la pestaña de pronóstico.
+
 ## 6. Integración del sistema
 
 Los tres modelos se integraron en una solución que permite acceder a sus funcionalidades desde una misma aplicación.
@@ -217,14 +235,19 @@ Entre sus principales rutas se encuentran:
 
 | Endpoint | Función |
 |---|---|
-| `GET /` | Verificar el funcionamiento de la API. |
+| `GET /` | En el navegador, muestra la página de inicio de la API. Para la aplicación y otros programas, devuelve el estado de los modelos en JSON. |
+| `GET /estado` | Estado de los modelos en JSON. |
 | `POST /predict/mosquito` | Clasificar una imagen de mosquito. |
 | `POST /predict/casos` | Generar el pronóstico de casos de las 4 semanas siguientes a partir de 26 semanas (también responde en `/predict/rnn`, el nombre anterior). |
 | `POST /predict/accion` | Recomendar una acción preventiva. |
+| `POST /predict/casos/provincia` | Bonus: pronóstico de una provincia (datos sintéticos). |
+| `GET /visual/nacional` | Gráfico PNG del pronóstico nacional contra el umbral endémico, con fecha de corte opcional. |
+| `GET /visual/provincia/{provincia}` | Gráfico PNG del pronóstico de una provincia (bonus). |
+| `GET /visual/provincias` | Panel PNG con las 7 provincias y un ranking según su umbral (bonus). |
 
-La API valida los datos de entrada: por ejemplo, el pronóstico exige exactamente 26 semanas y la humedad debe estar entre 0 y 100 %.
+La API valida los datos de entrada: por ejemplo, el pronóstico exige exactamente 26 semanas, la humedad debe estar entre 0 y 100 % y la provincia debe ser una de las 7.
 
-La documentación interactiva de la API se encuentra disponible mediante Swagger UI en `/docs`.
+La documentación interactiva está en `/docs` (Swagger UI), con los colores de VectorIA. Los endpoints están agrupados por módulo, y cada endpoint de predicción trae ejemplos listos con datos del proyecto, como el brote de octubre de 2023. Los gráficos de `/visual` se pueden probar desde ahí mismo y aparecen en la misma página. En el navegador, la dirección principal de la API (`http://127.0.0.1:8000`) muestra una página de inicio con el estado de cada modelo y los gráficos generados en el momento.
 
 ### 6.2. Aplicación con Streamlit
 
@@ -234,7 +257,7 @@ La aplicación cuenta con cinco pestañas:
 
 1. **Resumen:** muestra el estado de la API y de los modelos, y los casos del último año.
 2. **Identificación CNN:** permite cargar una imagen y obtener la especie, con la probabilidad de cada clase.
-3. **Pronóstico RNN:** el usuario elige una semana; la SimpleRNN usa las 26 semanas que terminan ahí y pronostica las cuatro siguientes. El gráfico compara el pronóstico con el umbral endémico semanal (percentil 75 de esa misma semana en los 5 años anteriores) y, si se eligió una semana pasada, con los casos que de verdad hubo.
+3. **Pronóstico RNN:** el usuario elige una semana; la SimpleRNN usa las 26 semanas que terminan ahí y pronostica las cuatro siguientes. El gráfico compara el pronóstico con el umbral endémico semanal (percentil 75 de esa misma semana en los 5 años anteriores) y, si se eligió una semana pasada, con los casos que de verdad hubo. Un selector cambia al bonus por provincia (con un aviso de datos sintéticos): se elige la provincia y la semana, y un botón compara las 7 provincias según qué tanto se acercan a su umbral.
 4. **Prevención ANN:** usa ese pronóstico, el clima de la semana elegida, el umbral endémico calculado con los datos históricos y el resultado de la CNN para recomendar una acción preventiva con su motivo. Incluye un simulador "¿Qué pasaría si…?": con deslizadores de casos, lluvia, temperatura y detección de Aedes, se ve cómo cambiaría la recomendación.
 5. **Mapa cantonal:** mapa de Costa Rica coloreado según los casos de cada cantón, en escala logarítmica para que se distingan los cantones con pocos casos. Incluye una animación de 2013 a 2018, una vista 3D en la que cada cantón se eleva según sus casos, el ranking de cantones y la evolución anual por provincia, con filtros por provincia y año. El mapa funciona sin internet, porque las fronteras de los cantones vienen dentro del proyecto; solo el mapa de fondo de la vista 3D necesita conexión.
 
@@ -245,6 +268,7 @@ Los resultados obtenidos permiten identificar el desempeño de cada uno de los m
 - **CNN:** MobileNetV2 alcanzó un F1 macro de 88.30 %, superando el objetivo del 85 %.
 - **RNN:** SimpleRNN obtuvo un RMSE de 260 y un MAE de 175, el menor error entre las dos redes y muy por debajo de la línea base estacional (638). Aun así, no supera a la persistencia (216), salvo a 4 semanas de distancia.
 - **ANN:** alcanzó una exactitud promedio de 90.8 %, aunque la categoría de eliminación de criaderos todavía necesita mejoras.
+- **Bonus por provincia (datos sintéticos):** RMSE de 27.8 y MAE de 15.4, por debajo de la línea base estacional (49.0) y de la persistencia (35.3).
 
 En conjunto, los resultados demuestran que los modelos pueden aportar herramientas de apoyo para la identificación de vectores, el análisis de tendencias y la recomendación de medidas preventivas.
 
@@ -259,8 +283,10 @@ En conjunto, los resultados demuestran que los modelos pueden aportar herramient
 | Aplicación | Subir foto, elegir semana y ver el pronóstico contra el umbral endémico, recomendación con motivo, mapa de calor por cantón | Las cuatro funciones | Sí |
 | Aplicación | Extra: deslizadores "¿qué pasaría si?" | Simulador en la pestaña de prevención | Sí |
 | Aplicación | Aviso fijo: no diagnostica dengue en personas | En la parte superior de la aplicación | Sí |
-| API | `/predict/mosquito`, `/predict/casos` y `/predict/accion` | Los tres endpoints, documentados en `/docs` | Sí |
+| API | `/predict/mosquito`, `/predict/casos` y `/predict/accion` | Los tres endpoints, documentados en `/docs` con ejemplos, más gráficos PNG en `/visual` | Sí |
 | Entregables | README, notebooks de EDA y entrenamiento, modelos, aplicación, API, informe y código en GitHub | Todos | Sí |
+| Bonus | Predicción por provincia con `vectoria_dengue_semanal.csv` (sintético) | SimpleRNN por provincia: RMSE 27.8 / MAE 15.4, contra 49.0 / 30.5 del baseline (notebook 05, API y app) | Sí, con datos sintéticos |
+| Bonus | Identificar larvas en criaderos con MLMI-2024 | — | No se hizo |
 | Extra | Docker | — | No se hizo |
 
 ## 8. Limitaciones del proyecto
@@ -275,7 +301,7 @@ Durante el desarrollo se identificaron algunas limitaciones que deben considerar
 - Ninguna de las dos redes del Módulo 2 supera a la persistencia (repetir la última semana), y las dos subestiman los brotes. Como la ANN decide las alertas con este pronóstico, un pronóstico bajo puede hacer que una alerta no se active.
 - El conjunto de prueba de la CNN tiene solo 8 fotos de Culex, así que el F1 de esa clase es poco confiable: un solo error lo mueve mucho. Además, cada especie viene sobre todo de una fuente distinta (Aedes aegypti y Aedes albopictus de Kaggle, Culex de IEEE DataPort y Mendeley), por lo que la red podría estar aprendiendo el estilo o el fondo de cada fuente y no solo el mosquito.
 - La lluvia de NASA POWER se estima con un modelo (MERRA-2), no con estaciones. La semana del 26 de mayo de 2024 marca 625 mm, la más lluviosa de toda la serie, pero ni ERA5 (entre 14 y 36 mm ese día en las mismas ciudades) ni las estaciones del IMN registran esa lluvia, por lo que se considera un error de la fuente. No se eliminó, para no cambiar los archivos que usan los modelos. Su efecto en el pronóstico es pequeño: cambiando esa semana por el valor de ERA5, el RMSE de la SimpleRNN pasa de 260.2 a 255.4. También afecta la lluvia de 14 días de `vectoria_acciones.csv` en las semanas del 26 de mayo y el 2 de junio de 2024, aunque sus etiquetas no cambian.
-- El archivo `vectoria_dengue_semanal.csv` es sintético y no representa cifras oficiales. Solo se usa en el EDA; ningún modelo se entrenó con él.
+- El archivo `vectoria_dengue_semanal.csv` es sintético y no representa cifras oficiales. Solo se usa en el EDA y en el bonus por provincia, así que los buenos resultados de ese modelo muestran que el método funciona, pero no que pronostique el dengue real de cada provincia. Sus resultados no se mezclan con los del Módulo 2.
 - La información cantonal disponible corresponde al período 2013–2018 y sus totales no coinciden con los datos nacionales. Por ello, la pestaña cantonal debe utilizarse para comparaciones entre cantones dentro de ese conjunto, no para representar directamente los totales nacionales.
 - En la aplicación, la precipitación de 14 días se aproxima sumando la lluvia de la semana elegida y la anterior. La temperatura y la humedad se toman de la semana elegida.
 - La aplicación calcula el umbral endémico con los datos históricos (percentil 75 de los casos de esas mismas 4 semanas en los 5 años anteriores), con la misma fórmula de los datos de entrenamiento de la ANN. No es un umbral oficial del Ministerio de Salud, y puede ajustarse manualmente.
@@ -305,6 +331,7 @@ Para continuar fortaleciendo VectorIA, se proponen las siguientes mejoras:
 - Agregar a la CNN una clase para imágenes que no son mosquitos.
 - Mejorar la detección de la categoría de eliminación de criaderos en el modelo ANN.
 - Comparar SimpleRNN y LSTM con un período de validación que incluya un brote.
+- Conseguir datos reales semanales por provincia (por ejemplo, de los boletines del Ministerio de Salud) y volver a entrenar el modelo del bonus con ellos; el notebook 05 ya está listo para eso.
 - Contrastar la lluvia de NASA POWER con las estaciones del IMN.
 - Incorporar datos epidemiológicos y climáticos oficiales actualizados.
 - Automatizar la obtención de umbrales endémicos.
@@ -319,7 +346,7 @@ VectorIA integra tres modelos de inteligencia artificial para apoyar diferentes 
 
 Los resultados experimentales muestran que MobileNetV2 alcanzó un F1 macro de 88.30 %, SimpleRNN obtuvo mejores métricas de error que LSTM y la línea base estacional, y el modelo ANN logró una exactitud promedio de 90.8 %.
 
-En el pronóstico, la red más simple superó a la más compleja: con pocos datos y sin brotes en el año de validación, la LSTM no logró aprovechar su memoria. Ninguna de las dos superó todavía a la persistencia, lo que deja claro el siguiente paso: más datos y un año de validación con brote.
+En el pronóstico, la red más simple superó a la más compleja: con pocos datos y sin brotes en el año de validación, la LSTM no logró aprovechar su memoria. Ninguna de las dos superó todavía a la persistencia, lo que deja claro el siguiente paso: más datos y un año de validación con brote. El bonus por provincia apunta en esa dirección: con más ventanas y un año de validación con brote, la misma SimpleRNN sí superó a la persistencia, aunque con datos sintéticos.
 
 La integración mediante FastAPI y Streamlit permite utilizar las funcionalidades desde una aplicación centralizada y facilita la interacción con los modelos.
 

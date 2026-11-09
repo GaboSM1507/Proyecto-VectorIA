@@ -25,11 +25,17 @@ st.set_page_config(
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.abspath(os.path.join(BASE_DIR, ".."))
 
-API = "http://127.0.0.1:8000"
+# Se puede cambiar con la variable de entorno VECTORIA_API (por ejemplo, para pruebas)
+API = os.environ.get("VECTORIA_API", "http://127.0.0.1:8000")
 TIMEOUT = 60
 
 RUTA_DENGUE = os.path.join(
     ROOT_DIR, "data", "processed", "dengue_procesado.csv"
+)
+
+# Bonus por provincia: datos sintéticos del paquete del curso, ya limpios en el EDA
+RUTA_PROVINCIAS = os.path.join(
+    ROOT_DIR, "data", "processed", "dengue_provincias_limpio.csv"
 )
 
 RUTA_CANTONES = os.path.join(
@@ -515,6 +521,7 @@ api_ok = estado is not None
 cnn_ok = api_ok and estado.get("cnn_ready", False)
 rnn_ok = api_ok and estado.get("rnn_ready", False)
 ann_ok = api_ok and estado.get("ann_ready", False)
+prov_ok = api_ok and estado.get("rnn_provincias_ready", False)
 
 
 # ============================================================
@@ -564,7 +571,8 @@ with st.sidebar:
     for nombre, disponible in [
         ("CNN · Mosquitos", cnn_ok),
         ("RNN · Pronóstico", rnn_ok),
-        ("ANN · Prevención", ann_ok)
+        ("ANN · Prevención", ann_ok),
+        ("RNN · Provincias (bonus)", prov_ok)
     ]:
 
         st.markdown(
@@ -589,7 +597,7 @@ with st.sidebar:
 
     if st.button(
         "🔄 Actualizar estado",
-        use_container_width=True
+        width="stretch"
     ):
 
         estado_api.clear()
@@ -807,7 +815,7 @@ with tab_inicio:
 
             st.plotly_chart(
                 estilo_grafico(fig, 370),
-                use_container_width=True
+                width="stretch"
             )
 
         else:
@@ -823,7 +831,8 @@ with tab_inicio:
         for nombre, descripcion, disponible in [
             ("CNN", "Identificación visual de mosquitos", cnn_ok),
             ("RNN", "Pronóstico de dengue", rnn_ok),
-            ("ANN", "Recomendación preventiva", ann_ok)
+            ("ANN", "Recomendación preventiva", ann_ok),
+            ("RNN por provincia", "Bonus: pronóstico de las 7 provincias (datos sintéticos)", prov_ok)
         ]:
 
             color = C["teal"] if disponible else C["red"]
@@ -931,7 +940,7 @@ with tab_cnn:
 
                     st.image(
                         archivo,
-                        use_container_width=True
+                        width="stretch"
                     )
 
                     st.caption(
@@ -941,7 +950,7 @@ with tab_cnn:
                 ejecutar = st.button(
                     "🔍 Analizar imagen",
                     disabled=archivo is None,
-                    use_container_width=True,
+                    width="stretch",
                     key="analizar_cnn"
                 )
 
@@ -1097,6 +1106,352 @@ def umbral_semanal(df, anio, semana):
     return float(np.percentile(valores, 75))
 
 
+# ---------------- Bonus: pronóstico por provincia ----------------
+
+MODO_NACIONAL = "📈 Nacional · datos reales"
+MODO_PROVINCIA = "🗺️ Por provincia · bonus (datos sintéticos)"
+
+
+@st.cache_data
+def cargar_provincias():
+    """Las 7 series del bonus, cada una con su índice 0, 1, 2… (como cargar_dengue)."""
+    df = pd.read_csv(RUTA_PROVINCIAS, parse_dates=["fecha_inicio_semana"])
+    return {
+        provincia: grupo.sort_values("fecha_inicio_semana").reset_index(drop=True)
+        for provincia, grupo in df.groupby("provincia")
+    }
+
+
+def pedir_pronostico_provincia(provincia, df, corte):
+    """Manda a la API las 26 semanas que terminan en la fila corte."""
+    semanas = [
+        {
+            "casos_dengue": float(fila.casos_dengue),
+            "lluvia_mm": float(fila.lluvia_mm),
+            "temp_max_c": float(fila.temp_max_c),
+            "temp_min_c": float(fila.temp_min_c),
+            "humedad_rel_pct": float(fila.humedad_rel_pct),
+            "semana_epi": int(fila.semana_epi)
+        }
+        for fila in df.iloc[corte - 25:corte + 1].itertuples()
+    ]
+
+    return requests.post(
+        f"{API}/predict/casos/provincia",
+        json={"provincia": provincia, "semanas": semanas},
+        timeout=TIMEOUT
+    )
+
+
+def grafico_pronostico(df, corte, predicciones, nombre_modelo):
+    """Historia, umbral semanal, casos reales y pronóstico (el mismo estilo del pronóstico nacional)."""
+    ultimas = df.iloc[corte - 25:corte + 1]
+    futuras = semanas_siguientes(df, corte)
+    fecha_corte = df["fecha_inicio_semana"].iloc[corte]
+
+    fechas_hist = list(ultimas["fecha_inicio_semana"])
+    fechas_fut = [f for f, _, _ in futuras]
+    historicos = [float(x) for x in ultimas["casos_dengue"]]
+
+    umbrales = (
+        [umbral_semanal(df, int(f.anio), int(f.semana_epi)) for f in ultimas.itertuples()]
+        + [umbral_semanal(df, anio, semana) for _, anio, semana in futuras]
+    )
+
+    reales = [
+        float(df["casos_dengue"].iloc[corte + k])
+        for k in range(1, 5)
+        if corte + k < len(df)
+    ]
+
+    fig = go.Figure()
+
+    fig.add_shape(
+        type="rect", x0=fecha_corte, x1=fechas_fut[-1] + pd.Timedelta(days=3),
+        y0=0, y1=1, yref="paper", fillcolor="rgba(32,163,158,.08)", line_width=0, layer="below"
+    )
+
+    fig.add_trace(go.Scatter(
+        x=fechas_hist + fechas_fut, y=umbrales, mode="lines", name="Umbral endémico semanal",
+        line=dict(color=C["red"], width=2, dash="dot"), hovertemplate="Umbral: %{y:,.0f}<extra></extra>"
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=fechas_hist, y=historicos, mode="lines", name="Casos registrados",
+        line=dict(color=C["blue"], width=3), fill="tozeroy", fillcolor="rgba(36,123,160,.07)",
+        hovertemplate="Registrados: %{y:,.0f}<extra></extra>"
+    ))
+
+    if reales:
+        fig.add_trace(go.Scatter(
+            x=[fechas_hist[-1]] + fechas_fut[:len(reales)], y=[historicos[-1]] + reales,
+            mode="lines+markers", name="Casos reales (para comparar)",
+            line=dict(color=C["orange"], width=2), marker=dict(size=[0] + [8] * len(reales)),
+            hovertemplate="Reales: %{y:,.0f}<extra></extra>"
+        ))
+
+    fig.add_trace(go.Scatter(
+        x=[fechas_hist[-1]] + fechas_fut, y=[historicos[-1]] + list(predicciones),
+        mode="lines+markers", name=nombre_modelo,
+        line=dict(color=C["teal"], width=3, dash="dash"), marker=dict(size=[0] + [9] * len(predicciones)),
+        hovertemplate="Pronóstico: %{y:,.0f}<extra></extra>"
+    ))
+
+    fig.add_shape(
+        type="line", x0=fecha_corte, x1=fecha_corte, y0=0, y1=1, yref="paper",
+        line=dict(color="#718096", width=1, dash="dot")
+    )
+
+    fig.add_annotation(
+        x=fecha_corte, y=1.04, yref="paper", text="Semana de corte",
+        showarrow=False, font=dict(size=11, color="#718096")
+    )
+
+    fig.update_layout(
+        xaxis_title="Semana", yaxis_title="Casos por semana",
+        hovermode="x unified", legend=dict(orientation="h", y=-0.22)
+    )
+
+    tabla = pd.DataFrame({
+        "Semana": [f.strftime("%d/%m/%Y") for f in fechas_fut],
+        "Pronóstico": [round(p) for p in predicciones],
+        "Umbral semanal": [None if u is None else round(u) for u in umbrales[-4:]]
+    })
+
+    if reales:
+        tabla["Casos reales"] = reales + [None] * (4 - len(reales))
+
+    return fig, tabla, reales
+
+
+def seccion_provincias():
+    """Pestaña de pronóstico en modo provincia (bonus del enunciado)."""
+
+    html(f"""
+    <div style="background:#FFF7E8;border:1px solid #F5D9A8;border-radius:12px;
+                padding:13px 16px;margin-bottom:18px;color:#7A5418;font-size:14px;">
+        <b>⚠️ Bonus del enunciado · datos sintéticos.</b>
+        Una sola SimpleRNN para las 7 provincias, entrenada con <code>vectoria_dengue_semanal.csv</code>
+        (notebook 05). Son datos del paquete del curso, <b>no cifras oficiales</b>: sirven para mostrar el
+        método, no para pronosticar el dengue real de cada provincia.
+    </div>
+    """)
+
+    if not prov_ok:
+        st.error("El modelo por provincia no está disponible. Verifica que la API esté encendida.")
+        return
+
+    try:
+        datos = cargar_provincias()
+    except Exception as e:
+        st.error(f"No fue posible cargar los datos por provincia: {e}")
+        return
+
+    nombres = sorted(datos)
+    df_primera = datos[nombres[0]]
+    ultimo = len(df_primera) - 1
+
+    izquierda, derecha = st.columns([1, 2.2])
+
+    with izquierda:
+        provincia = st.selectbox(
+            "Provincia",
+            nombres,
+            index=nombres.index("Puntarenas"),
+            key="prov_nombre"
+        )
+
+    df = datos[provincia]
+
+    with derecha:
+        corte = st.select_slider(
+            "Semana de corte (la última semana que conoce el modelo)",
+            options=list(range(25, len(df))),
+            value=ultimo,
+            format_func=lambda i: df_primera["fecha_inicio_semana"].iloc[i].strftime("%d/%m/%Y"),
+            key="prov_corte"
+        )
+
+    fecha_corte = df["fecha_inicio_semana"].iloc[corte]
+    hay_reales = corte + 4 <= len(df) - 1
+
+    c1, c2, c3 = st.columns(3)
+
+    with c1:
+        tarjeta("Provincia", provincia, str(df["region_climatica"].iloc[0]), C["blue"])
+
+    with c2:
+        tarjeta("Población", f"{int(df['poblacion'].iloc[0]):,}", "Aproximada (datos del curso)", C["teal"])
+
+    with c3:
+        tarjeta(
+            "Semana de corte",
+            fecha_corte.strftime("%d/%m/%Y"),
+            "Pronóstico a futuro" if not hay_reales else "Se compara con los casos del archivo",
+            C["green"]
+        )
+
+    st.markdown(" ")
+
+    if st.button(f"📈 Pronosticar {provincia}", width="stretch", key="prov_boton"):
+
+        try:
+            with st.spinner(f"Pronosticando {provincia}..."):
+                respuesta = pedir_pronostico_provincia(provincia, df, corte)
+
+            if respuesta.status_code == 200:
+                st.session_state["prov_resultado"] = {
+                    "provincia": provincia, "corte": corte, "respuesta": respuesta.json()
+                }
+            else:
+                error_api(respuesta)
+
+        except requests.exceptions.RequestException as e:
+            st.error(f"Error de comunicación: {e}")
+
+    guardado = st.session_state.get("prov_resultado")
+
+    if guardado and (guardado["provincia"], guardado["corte"]) != (provincia, corte):
+
+        st.info("Cambiaste la provincia o la semana. Presiona «Pronosticar» para actualizar el resultado.")
+
+    elif guardado:
+
+        resultado = guardado["respuesta"]
+        predicciones = resultado.get("pronostico_casos", [])
+        total = float(resultado.get("total_estimado_periodo", sum(predicciones)))
+        umbral_4 = umbral_endemico(df, corte)
+        diferencia = total - umbral_4
+
+        fig, tabla, reales = grafico_pronostico(df, corte, predicciones, "Pronóstico SimpleRNN por provincia")
+
+        st.divider()
+        st.markdown(f"### Resultado del pronóstico · {provincia}")
+
+        a, b, c, d = st.columns(4)
+
+        with a:
+            tarjeta(
+                "Total pronosticado",
+                f"{total:,.0f} casos",
+                f"{abs(diferencia):,.0f} " + ("por encima" if diferencia > 0 else "por debajo") + " del umbral",
+                C["red"] if diferencia > 0 else C["green"]
+            )
+
+        with b:
+            tarjeta("Umbral endémico", f"{umbral_4:,.0f} casos",
+                    "Percentil 75 de esas 4 semanas en los 5 años anteriores", C["blue"])
+
+        with c:
+            tarjeta(
+                "Tendencia",
+                {"Ascendente": "↗ Al alza", "Descendente / Estable": "↘ A la baja"}.get(
+                    resultado.get("tendencia_general"), "—"),
+                "Semana +4 contra la semana de corte",
+                C["orange"]
+            )
+
+        with d:
+            if len(reales) == 4:
+                error = float(np.mean(np.abs(np.array(predicciones) - np.array(reales))))
+                tarjeta("Error medio", f"{error:,.1f} casos", "Por semana, contra el archivo", C["teal"])
+            else:
+                tarjeta("Horizonte", "4 semanas", "Pronóstico a futuro", C["teal"])
+
+        st.markdown(" ")
+        st.markdown(f"### Pronóstico contra el umbral endémico · {provincia}")
+        st.plotly_chart(estilo_grafico(fig, 430), width="stretch", key="prov_grafico")
+        st.dataframe(tabla, width="stretch", hide_index=True)
+
+    # ---------------- Las 7 provincias en la misma semana ----------------
+
+    st.divider()
+    st.markdown("### 🗺️ Las 7 provincias en la misma semana")
+    st.caption(
+        "Pronostica las 7 provincias con la semana de corte elegida y las ordena según qué tanto "
+        "se acercan a su propio umbral endémico (100 % = justo en el umbral)."
+    )
+
+    if st.button("Comparar las 7 provincias", width="stretch", key="prov_comparar"):
+
+        filas = []
+
+        try:
+            with st.spinner("Pronosticando las 7 provincias..."):
+                for nombre in nombres:
+                    respuesta = pedir_pronostico_provincia(nombre, datos[nombre], corte)
+                    if respuesta.status_code != 200:
+                        error_api(respuesta)
+                        filas = []
+                        break
+                    total = float(respuesta.json()["total_estimado_periodo"])
+                    umbral = umbral_endemico(datos[nombre], corte)
+                    filas.append({"Provincia": nombre, "Pronóstico (4 semanas)": round(total),
+                                  "Umbral endémico": round(umbral), "% del umbral": 100 * total / umbral})
+
+        except requests.exceptions.RequestException as e:
+            st.error(f"Error de comunicación: {e}")
+            filas = []
+
+        if filas:
+            st.session_state["prov_ranking"] = {"corte": corte, "filas": filas}
+
+    ranking = st.session_state.get("prov_ranking")
+
+    if ranking and ranking["corte"] != corte:
+
+        st.info("Cambiaste la semana. Presiona «Comparar las 7 provincias» para actualizar.")
+
+    elif ranking:
+
+        tabla = pd.DataFrame(ranking["filas"]).sort_values("% del umbral")
+        colores = [
+            C["red"] if p > 200 else C["orange"] if p > 100 else C["teal"]
+            for p in tabla["% del umbral"]
+        ]
+
+        fig = go.Figure(go.Bar(
+            x=tabla["% del umbral"], y=tabla["Provincia"], orientation="h",
+            marker_color=colores, text=[f"{p:,.0f} %" for p in tabla["% del umbral"]],
+            textposition="outside", cliponaxis=False,
+            customdata=tabla[["Pronóstico (4 semanas)", "Umbral endémico"]],
+            hovertemplate="%{y}: %{customdata[0]:,} casos · umbral %{customdata[1]:,}<extra></extra>"
+        ))
+
+        fig.add_vline(x=100, line_dash="dot", line_color="#486581",
+                      annotation_text="umbral", annotation_position="top")
+
+        fig.update_layout(
+            xaxis_title="Pronóstico de 4 semanas como % del umbral endémico",
+            yaxis_title="",
+            xaxis_range=[0, max(tabla["% del umbral"].max(), 100) * 1.2]
+        )
+
+        st.plotly_chart(estilo_grafico(fig, 360), width="stretch", key="prov_ranking_grafico")
+
+        sobre = tabla.loc[tabla["% del umbral"] > 100, "Provincia"].tolist()
+        st.markdown(
+            ("**Sobre su umbral:** " + ", ".join(sobre) + ".") if sobre
+            else "**Ninguna provincia supera su umbral** en las próximas 4 semanas."
+        )
+
+        tabla_vista = tabla.sort_values("% del umbral", ascending=False).copy()
+        tabla_vista["% del umbral"] = tabla_vista["% del umbral"].map(lambda p: f"{p:,.0f} %")
+        st.dataframe(tabla_vista, width="stretch", hide_index=True)
+
+        with st.expander("Ver el mismo panel generado por la API (GET /visual/provincias)"):
+            try:
+                fecha_texto = df_primera["fecha_inicio_semana"].iloc[corte].strftime("%Y-%m-%d")
+                imagen = requests.get(f"{API}/visual/provincias", params={"fecha_corte": fecha_texto},
+                                      timeout=TIMEOUT)
+                if imagen.status_code == 200:
+                    st.image(imagen.content, width="stretch")
+                else:
+                    error_api(imagen)
+            except requests.exceptions.RequestException as e:
+                st.error(f"Error de comunicación: {e}")
+
+
 with tab_rnn:
 
     encabezado(
@@ -1105,7 +1460,18 @@ with tab_rnn:
         "y pronostica las 4 siguientes, comparadas con el umbral endémico."
     )
 
-    if not rnn_ok:
+    modo = st.segmented_control(
+        "Serie que se pronostica",
+        [MODO_NACIONAL, MODO_PROVINCIA],
+        default=MODO_NACIONAL,
+        key="modo_pronostico"
+    )
+
+    if modo == MODO_PROVINCIA:
+
+        seccion_provincias()
+
+    elif not rnn_ok:
 
         st.error(
             "El modelo RNN no está disponible."

@@ -104,6 +104,21 @@ SimpleRNN obtuvo menores errores que LSTM, por dos razones:
 
 Por esta razón, se seleccionó SimpleRNN para realizar los pronósticos dentro de la API y la aplicación. El modelo LSTM se conserva para comparación. El detalle está en `notebooks/03_LSTM_Casos.ipynb`.
 
+#### Bonus: pronóstico por provincia (datos sintéticos)
+
+El enunciado propone como bonus pronosticar por provincia con `vectoria_dengue_semanal.csv`. Ese archivo es **sintético** (lo generó el paquete del curso, no son cifras oficiales), así que el resultado muestra que el método funciona, no que la red pronostique el dengue real de cada provincia.
+
+- Una sola SimpleRNN (la misma red base) para las 7 provincias, con la provincia como variable *one-hot*: 26 semanas → 4 semanas.
+- Separación temporal: entrenamiento de 2014 a 2022, validación con 2023 y prueba con 2024–2025 (707 ventanas).
+
+| Modelo | RMSE | MAE |
+|---|---:|---:|
+| SimpleRNN por provincia | 27.8 | 15.4 |
+| Baseline estacional | 49.0 | 30.5 |
+| Persistencia (control) | 35.3 | 19.9 |
+
+Supera al baseline estacional en las 7 provincias (entre 29 % y 52 % menos RMSE) y, a diferencia del modelo nacional, también a la persistencia. El detalle está en `notebooks/05_Bonus_Provincias.ipynb`. La API lo ofrece en `POST /predict/casos/provincia` y la app en la pestaña de pronóstico.
+
 ### Módulo 3. Recomendación de acciones preventivas (ANN)
 
 Este módulo utiliza una red neuronal artificial (ANN) para clasificar las condiciones analizadas y recomendar una acción preventiva.
@@ -152,7 +167,7 @@ Cuenta con cinco pestañas:
 |---|---|
 | Resumen | Presenta el estado de la API y de los modelos, y los casos del último año. |
 | Identificación CNN | Permite cargar una imagen y obtener la clasificación mediante CNN. |
-| Pronóstico RNN | Se elige una semana; la SimpleRNN usa las 26 semanas que terminan ahí y pronostica las 4 siguientes. El gráfico las compara con el umbral endémico y, si son semanas pasadas, con los casos reales. |
+| Pronóstico RNN | Se elige una semana; la SimpleRNN usa las 26 semanas que terminan ahí y pronostica las 4 siguientes. El gráfico las compara con el umbral endémico y, si son semanas pasadas, con los casos reales. Un selector cambia al bonus por provincia (datos sintéticos), con un ranking de las 7 provincias según su umbral. |
 | Prevención ANN | Utiliza el pronóstico, el clima de esa semana, el umbral endémico y el resultado de la CNN para recomendar una acción con su motivo. Incluye un simulador "¿Qué pasaría si…?" con deslizadores de casos, lluvia y temperatura. |
 | Mapa cantonal | Mapa de Costa Rica coloreado según los casos de cada cantón, con animación de 2013 a 2018, vista 3D, ranking de cantones y evolución anual, con filtros por provincia y año. |
 
@@ -202,7 +217,8 @@ Proyecto-VectorIA/
 │   ├── 01_EDA.ipynb
 │   ├── 02_CNN_Mosquitos.ipynb
 │   ├── 03_LSTM_Casos.ipynb
-│   └── 04_ANN_Acciones.ipynb
+│   ├── 04_ANN_Acciones.ipynb
+│   └── 05_Bonus_Provincias.ipynb   (bonus: pronóstico por provincia)
 │
 ├── src/
 │   ├── __init__.py
@@ -227,6 +243,9 @@ Proyecto-VectorIA/
 │   ├── rnn_simple_preprocesado.pkl
 │   ├── rnn_lstm.h5
 │   ├── rnn_lstm_preprocesado.pkl
+│   ├── rnn_provincias.h5
+│   ├── rnn_provincias_preprocesado.pkl
+│   ├── rnn_provincias_resultados.json
 │   └── scaler_ann.pkl
 │
 ├── api/
@@ -247,7 +266,7 @@ El proyecto utiliza diferentes conjuntos de datos para entrenar y evaluar sus mo
 | `vectoria_acciones.csv` | Mixto | Datos para entrenar el modelo de recomendaciones: casos y clima reales, escenarios simulados y etiquetas generadas con reglas. |
 | `vectoria_casos_cantonal_anual_real.csv` | Real | Comparación de casos por cantón (2013–2018). |
 | `cantones_costa_rica.geojson` | Real | Fronteras de los cantones para el mapa de la app (geoBoundaries, dominio público). Se genera con `src/preparar_mapa_cantones.py`. |
-| `vectoria_dengue_semanal.csv` | Sintético | Solo se analiza en el EDA; ningún modelo lo usa. |
+| `vectoria_dengue_semanal.csv` | Sintético | Versión por provincia. Se analiza en el EDA, que genera `dengue_provincias_limpio.csv`, y solo lo usa el bonus de pronóstico por provincia. |
 
 El análisis de todos estos archivos está en `notebooks/01_EDA.ipynb`.
 
@@ -311,13 +330,13 @@ Abrir una primera terminal con el entorno virtual activado y ejecutar:
 python -m uvicorn api.main:app --reload
 ```
 
-La API estará disponible en:
+La API estará disponible en la siguiente dirección. Abierta en el navegador, muestra una página de inicio con el estado de cada modelo y gráficos del pronóstico generados en el momento:
 
 ```text
 http://127.0.0.1:8000
 ```
 
-La documentación interactiva de los endpoints se encuentra en:
+La documentación interactiva de los endpoints, con ejemplos listos para probar, se encuentra en:
 
 ```text
 http://127.0.0.1:8000/docs
@@ -341,12 +360,17 @@ La API permite que la aplicación se comunique con los modelos entrenados.
 
 | Método | Endpoint | Función |
 |---|---|---|
-| GET | `/` | Comprueba el estado del servicio. |
+| GET | `/` | En el navegador muestra la página de inicio; para la app y otros programas devuelve el estado en JSON. |
+| GET | `/estado` | Estado de los modelos (JSON). |
 | POST | `/predict/mosquito` | Clasifica una imagen de mosquito mediante CNN. |
 | POST | `/predict/casos` | Pronostica los casos de dengue de las próximas cuatro semanas a partir de 26 semanas (SimpleRNN). También responde en `/predict/rnn`, el nombre anterior. |
 | POST | `/predict/accion` | Recomienda una acción preventiva mediante ANN. |
+| POST | `/predict/casos/provincia` | Bonus: pronóstico de una provincia (datos sintéticos). |
+| GET | `/visual/nacional` | Gráfico PNG del pronóstico nacional contra el umbral endémico. Acepta `?fecha_corte=AAAA-MM-DD`. |
+| GET | `/visual/provincia/{provincia}` | Gráfico PNG del pronóstico de una provincia (bonus). |
+| GET | `/visual/provincias` | Panel PNG de las 7 provincias con un ranking según su umbral (bonus). |
 
-Los endpoints pueden probarse desde la documentación interactiva de FastAPI.
+Los endpoints pueden probarse desde la documentación interactiva (`/docs`). Cada endpoint de predicción trae ejemplos con datos del proyecto, y los gráficos de `/visual` aparecen ahí mismo al presionar *Execute*.
 
 ## 10. Limitaciones del proyecto
 
@@ -361,7 +385,7 @@ Aunque VectorIA integra los tres modelos y permite utilizarlos desde una aplicac
 - La prueba de la CNN tiene solo 8 fotos de Culex, y cada especie viene sobre todo de una fuente distinta, así que la red podría estar aprendiendo la fuente además del mosquito.
 - La lluvia de NASA POWER se estima con un modelo, no con estaciones. La semana del 26 de mayo de 2024 marca 625 mm, pero ni ERA5 ni las estaciones del IMN registran esa lluvia: es un error de la fuente. Se dejó documentado sin cambiar los datos; su efecto en el pronóstico es pequeño (RMSE de 260.2 a 255.4 si se corrige).
 - Los datos cantonales presentan diferencias respecto al total nacional y se utilizan para comparaciones entre cantones.
-- El conjunto de datos sintético no representa cifras oficiales y solo se usa en el EDA.
+- El conjunto de datos sintético no representa cifras oficiales. Solo se usa en el EDA y en el bonus por provincia, cuyos resultados muestran que el método funciona, no que pronostique el dengue real de cada provincia.
 - Las recomendaciones generadas son orientativas y deben ser interpretadas por personal capacitado.
 
 ## 11. Posibles mejoras futuras
@@ -372,6 +396,7 @@ Aunque VectorIA integra los tres modelos y permite utilizarlos desde una aplicac
 - Ampliar las visualizaciones para facilitar el análisis de los resultados.
 - Implementar escenarios interactivos para observar cómo cambian las recomendaciones al modificar las variables.
 - Incorporar nuevas fuentes de información para fortalecer los pronósticos.
+- Entrenar el modelo por provincia con datos reales semanales por provincia, que no venían en el paquete del curso.
 
 ## 12. Equipo de trabajo
 

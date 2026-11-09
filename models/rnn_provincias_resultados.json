@@ -1,0 +1,111 @@
+{
+  "datos": "sinteticos (vectoria_dengue_semanal.csv, limpiado en el EDA)",
+  "modelo": "rnn_provincias.h5",
+  "variables": [
+    "log_casos",
+    "lluvia_mm",
+    "temp_max_c",
+    "temp_min_c",
+    "humedad_rel_pct",
+    "semana_sin",
+    "semana_cos",
+    "prov_Alajuela",
+    "prov_Cartago",
+    "prov_Guanacaste",
+    "prov_Heredia",
+    "prov_Limón",
+    "prov_Puntarenas",
+    "prov_San José"
+  ],
+  "test": {
+    "desde": "2024-01-07",
+    "hasta": "2025-12-28",
+    "ventanas": 707
+  },
+  "global": {
+    "SimpleRNN": {
+      "RMSE": 27.8,
+      "MAE": 15.4
+    },
+    "Baseline estacional": {
+      "RMSE": 49.0,
+      "MAE": 30.5
+    },
+    "Persistencia": {
+      "RMSE": 35.3,
+      "MAE": 19.9
+    }
+  },
+  "por_provincia": {
+    "Alajuela": {
+      "casos_promedio": 54.7,
+      "RMSE_SimpleRNN": 42.1,
+      "RMSE_estacional": 59.2,
+      "RMSE_persistencia": 56.5,
+      "MAE_SimpleRNN": 26.5,
+      "MAE_estacional": 39.2,
+      "MAE_persistencia": 35.4,
+      "mejora_vs_estacional_%": 28.8
+    },
+    "Cartago": {
+      "casos_promedio": 1.5,
+      "RMSE_SimpleRNN": 1.6,
+      "RMSE_estacional": 3.4,
+      "RMSE_persistencia": 2.2,
+      "MAE_SimpleRNN": 1.2,
+      "MAE_estacional": 2.4,
+      "MAE_persistencia": 1.5,
+      "mejora_vs_estacional_%": 52.2
+    },
+    "Guanacaste": {
+      "casos_promedio": 40.0,
+      "RMSE_SimpleRNN": 34.7,
+      "RMSE_estacional": 65.7,
+      "RMSE_persistencia": 39.5,
+      "MAE_SimpleRNN": 20.2,
+      "MAE_estacional": 47.7,
+      "MAE_persistencia": 24.1,
+      "mejora_vs_estacional_%": 47.3
+    },
+    "Heredia": {
+      "casos_promedio": 10.7,
+      "RMSE_SimpleRNN": 9.0,
+      "RMSE_estacional": 13.5,
+      "RMSE_persistencia": 10.9,
+      "MAE_SimpleRNN": 6.0,
+      "MAE_estacional": 9.5,
+      "MAE_persistencia": 7.8,
+      "mejora_vs_estacional_%": 33.7
+    },
+    "Limón": {
+      "casos_promedio": 30.6,
+      "RMSE_SimpleRNN": 26.3,
+      "RMSE_estacional": 51.8,
+      "RMSE_persistencia": 35.2,
+      "MAE_SimpleRNN": 16.0,
+      "MAE_estacional": 35.5,
+      "MAE_persistencia": 22.7,
+      "mejora_vs_estacional_%": 49.2
+    },
+    "Puntarenas": {
+      "casos_promedio": 43.4,
+      "RMSE_SimpleRNN": 30.1,
+      "RMSE_estacional": 60.0,
+      "RMSE_persistencia": 34.9,
+      "MAE_SimpleRNN": 20.8,
+      "MAE_estacional": 44.7,
+      "MAE_persistencia": 24.4,
+      "mejora_vs_estacional_%": 49.7
+    },
+    "San José": {
+      "casos_promedio": 34.8,
+      "RMSE_SimpleRNN": 27.4,
+      "RMSE_estacional": 49.7,
+      "RMSE_persistencia": 37.1,
+      "MAE_SimpleRNN": 16.9,
+      "MAE_estacional": 34.9,
+      "MAE_persistencia": 23.5,
+      "mejora_vs_estacional_%": 44.9
+    }
+  }
+}

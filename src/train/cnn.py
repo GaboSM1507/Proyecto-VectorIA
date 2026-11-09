@@ -7,14 +7,17 @@ las imágenes y arma el inventario con la separación entre entrenamiento y prue
 
 Las respuestas deben ser números (0, 1, 2), no vectores de unos y ceros.
 """
+import tensorflow as tf
 from tensorflow.keras.applications import MobileNetV2
 from tensorflow.keras.layers import (
+    BatchNormalization,
     Conv2D,
     Dense,
     Dropout,
     GlobalAveragePooling2D,
     Input,
     MaxPooling2D,
+    RandomContrast,
     RandomFlip,
     RandomRotation,
     RandomZoom
@@ -43,6 +46,42 @@ def crear_cnn(n_clases=3):
         Dense(n_clases, activation="softmax"),                # una probabilidad por especie
     ])
     modelo.compile(optimizer="adam", loss="sparse_categorical_crossentropy", metrics=["accuracy"])
+    return modelo
+
+
+def crear_cnn_v2(n_clases=3, tamano=192):
+    """CNN propia mejorada, también desde cero (sin pesos preentrenados).
+
+    Cambios frente a la sugerida por el enunciado:
+    - fotos más grandes (192 en vez de 128), para ver detalles como las escamas
+      blancas del tórax, que distinguen a aegypti de albopictus;
+    - dos capas Conv2D por bloque y un cuarto bloque de 256 filtros;
+    - BatchNormalization, que estabiliza el entrenamiento;
+    - más aumento de datos (giros en las dos direcciones, rotación, zoom y contraste).
+
+    Las fotos deben llegar divididas entre 255, igual que en crear_cnn.
+    """
+    modelo = Sequential([
+        Input(shape=(tamano, tamano, 3)),
+        RandomFlip("horizontal_and_vertical"),
+        RandomRotation(0.2),
+        RandomZoom(0.2),
+        RandomContrast(0.2),
+        Conv2D(32, 3, padding="same", activation="relu"), BatchNormalization(),
+        Conv2D(32, 3, padding="same", activation="relu"), BatchNormalization(), MaxPooling2D(),
+        Conv2D(64, 3, padding="same", activation="relu"), BatchNormalization(),
+        Conv2D(64, 3, padding="same", activation="relu"), BatchNormalization(), MaxPooling2D(),
+        Conv2D(128, 3, padding="same", activation="relu"), BatchNormalization(),
+        Conv2D(128, 3, padding="same", activation="relu"), BatchNormalization(), MaxPooling2D(),
+        Conv2D(256, 3, padding="same", activation="relu"), BatchNormalization(), MaxPooling2D(),
+        GlobalAveragePooling2D(),
+        Dropout(0.4),
+        Dense(128, activation="relu"),
+        Dropout(0.4),
+        Dense(n_clases, activation="softmax"),                # una probabilidad por especie
+    ])
+    modelo.compile(optimizer=tf.keras.optimizers.Adam(1e-3),
+                   loss="sparse_categorical_crossentropy", metrics=["accuracy"])
     return modelo
 
 

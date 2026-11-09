@@ -1,3 +1,10 @@
+"""Versión anterior del entrenamiento de las CNN (Módulo 1).
+
+La versión actual del entrenamiento y la evaluación, con la CNN propia mejorada (v2),
+la elección con validación y los resultados calculados, está en
+notebooks/02_CNN_Mosquitos.ipynb, sección 4. Este script se conserva como referencia:
+sus líneas de entrenamiento están comentadas y los F1 que guarda están escritos a mano.
+"""
 import pandas as pd
 import numpy as np
 from pathlib import Path

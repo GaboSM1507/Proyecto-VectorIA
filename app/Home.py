@@ -299,7 +299,7 @@ def error_api(respuesta):
     st.error(f"Error de la API: {detalle}")
 
 
-def mostrar_probabilidades(probabilidades, titulo="Distribución de probabilidades"):
+def mostrar_probabilidades(probabilidades, titulo="Distribución de probabilidades", clave=None):
 
     if not probabilidades:
         return
@@ -348,9 +348,11 @@ def mostrar_probabilidades(probabilidades, titulo="Distribución de probabilidad
         cliponaxis=False
     )
 
+    # La clave evita un error si se muestran dos gráficos iguales en la misma página
     st.plotly_chart(
         estilo_grafico(fig, 300),
-        use_container_width=True
+        width="stretch",
+        key=clave
     )
 
 
@@ -467,14 +469,17 @@ def cargar_cantones():
     )
 
 
-def umbral_endemico(df):
+def umbral_endemico(df, i=None):
     """
-    Umbral endémico para las 4 semanas que siguen al último registro:
-    percentil 75 de los casos de esas mismas 4 semanas en los 5 años
-    anteriores. Es la misma fórmula de vectoria_acciones.csv, con la
-    que se entrenó la ANN.
+    Umbral endémico para las 4 semanas que siguen a la fila i (por defecto,
+    el último registro): percentil 75 de los casos de esas mismas 4 semanas
+    en los 5 años anteriores. Es la misma fórmula de vectoria_acciones.csv,
+    con la que se entrenó la ANN.
     """
-    ultima = df.iloc[-1]
+    if i is None:
+        i = len(df) - 1
+
+    ultima = df.iloc[i]
     sumas = []
 
     for k in range(1, 6):
@@ -1047,11 +1052,57 @@ with tab_cnn:
 # 12. RNN: PRONÓSTICO
 # ============================================================
 
+def semanas_siguientes(df, i, n=4):
+    """
+    Fecha, año y semana epidemiológica de las n semanas que siguen a la fila i.
+    Si ya no hay datos (pronóstico a futuro), se calculan sumando 7 días.
+    """
+    salida = []
+    fecha = df["fecha_inicio_semana"].iloc[i]
+    anio = int(df["anio"].iloc[i])
+    semana = int(df["semana_epi"].iloc[i])
+
+    for k in range(1, n + 1):
+
+        if i + k < len(df):
+            fila = df.iloc[i + k]
+            fecha = fila["fecha_inicio_semana"]
+            anio = int(fila["anio"])
+            semana = int(fila["semana_epi"])
+        else:
+            fecha = fecha + pd.Timedelta(days=7)
+            semana += 1
+            if semana > 52:
+                semana, anio = 1, anio + 1
+
+        salida.append((fecha, anio, semana))
+
+    return salida
+
+
+def umbral_semanal(df, anio, semana):
+    """
+    Canal endémico semanal: percentil 75 de los casos de esa misma semana
+    epidemiológica en los 5 años anteriores (hacen falta al menos 3 años).
+    """
+    valores = df.loc[
+        df["anio"].between(anio - 5, anio - 1)
+        & (df["semana_epi"] == semana),
+        "casos_dengue"
+    ]
+
+    if len(valores) < 3:
+        return None
+
+    return float(np.percentile(valores, 75))
+
+
 with tab_rnn:
 
     encabezado(
         "Pronóstico de dengue",
-        "Estimación de casos mediante análisis de series temporales."
+        "Elige una semana: la SimpleRNN usa las 26 semanas que terminan ahí "
+        "y pronostica las 4 siguientes, comparadas con el umbral endémico."
     )
 
     if not rnn_ok:
@@ -1074,80 +1125,101 @@ with tab_rnn:
 
             else:
 
-                ultimas = df.tail(26).copy()
+                ultimo = len(df) - 1
+
+                # ---------------- Elegir semana ----------------
+
+                corte = st.select_slider(
+                    "Semana de corte (la última semana que conoce el modelo)",
+                    options=list(range(25, len(df))),
+                    value=ultimo,
+                    format_func=lambda i: df["fecha_inicio_semana"].iloc[i].strftime("%d/%m/%Y"),
+                    key="semana_corte"
+                )
+
+                st.caption(
+                    "Con la última semana ("
+                    + df["fecha_inicio_semana"].iloc[ultimo].strftime("%d/%m/%Y")
+                    + ") el modelo pronostica semanas que todavía no están en los datos. "
+                    "Si eliges una semana anterior, el gráfico compara el pronóstico "
+                    "con los casos que de verdad hubo."
+                )
+
+                ultimas = df.iloc[corte - 25:corte + 1].copy()
+                fecha_corte = df["fecha_inicio_semana"].iloc[corte]
+                futuras = semanas_siguientes(df, corte)
+                hay_reales = corte + 4 <= ultimo
 
                 c1, c2, c3 = st.columns(3)
 
                 with c1:
-                    st.metric(
+                    tarjeta(
                         "Ventana histórica",
-                        "26 semanas"
+                        "26 semanas",
+                        "Lo que ve la red antes de pronosticar",
+                        C["blue"]
                     )
 
                 with c2:
-                    st.metric(
-                        "Inicio",
-                        ultimas.iloc[0]["fecha_inicio_semana"].strftime(
-                            "%d/%m/%Y"
-                        )
+                    tarjeta(
+                        "Desde",
+                        ultimas.iloc[0]["fecha_inicio_semana"].strftime("%d/%m/%Y"),
+                        "Primera semana de la ventana",
+                        C["teal"]
                     )
 
                 with c3:
-                    st.metric(
-                        "Último registro",
-                        ultimas.iloc[-1]["fecha_inicio_semana"].strftime(
-                            "%d/%m/%Y"
-                        )
+                    tarjeta(
+                        "Semana de corte",
+                        fecha_corte.strftime("%d/%m/%Y"),
+                        "Pronóstico a futuro" if not hay_reales else "Se compara con los casos reales",
+                        C["green"]
                     )
+
+                st.markdown(" ")
 
                 with st.expander(
                     "Consultar datos históricos utilizados"
                 ):
 
                     st.dataframe(
-                        ultimas,
-                        use_container_width=True,
-                        hide_index=True
+                        ultimas[[
+                            "fecha_inicio_semana", "semana_epi", "casos_dengue",
+                            "lluvia_mm", "temp_max_c", "temp_min_c", "humedad_rel_pct"
+                        ]],
+                        width="stretch",
+                        hide_index=True,
+                        column_config={
+                            "fecha_inicio_semana": st.column_config.DateColumn(
+                                "Semana", format="DD/MM/YYYY"
+                            ),
+                            "semana_epi": "Semana epi.",
+                            "casos_dengue": "Casos",
+                            "lluvia_mm": "Lluvia (mm)",
+                            "temp_max_c": "T. máx. (°C)",
+                            "temp_min_c": "T. mín. (°C)",
+                            "humedad_rel_pct": "Humedad (%)"
+                        }
                     )
 
                 generar = st.button(
                     "📈 Generar pronóstico de cuatro semanas",
-                    use_container_width=True
+                    width="stretch"
                 )
 
                 if generar:
 
-                    semanas = []
-
-                    for _, fila in ultimas.iterrows():
-
-                        semanas.append({
-
-                            "casos_dengue": float(
-                                fila["casos_dengue"]
-                            ),
-
-                            "lluvia_mm": float(
-                                fila["lluvia_mm"]
-                            ),
-
-                            "temp_max_c": float(
-                                fila["temp_max_c"]
-                            ),
-
-                            "temp_min_c": float(
-                                fila["temp_min_c"]
-                            ),
-
-                            "humedad_rel_pct": float(
-                                fila["humedad_rel_pct"]
-                            ),
-
-                            "semana_epi": int(
-                                fila["semana_epi"]
-                            )
-
-                        })
+                    semanas = [
+                        {
+                            "casos_dengue": float(fila["casos_dengue"]),
+                            "lluvia_mm": float(fila["lluvia_mm"]),
+                            "temp_max_c": float(fila["temp_max_c"]),
+                            "temp_min_c": float(fila["temp_min_c"]),
+                            "humedad_rel_pct": float(fila["humedad_rel_pct"]),
+                            "semana_epi": int(fila["semana_epi"])
+                        }
+                        for _, fila in ultimas.iterrows()
+                    ]
 
                     try:
 
@@ -1156,16 +1228,25 @@ with tab_rnn:
                         ):
 
                             respuesta = requests.post(
-                                f"{API}/predict/rnn",
+                                f"{API}/predict/casos",
                                 json={"semanas": semanas},
                                 timeout=TIMEOUT
                             )
 
                         if respuesta.status_code == 200:
 
-                            st.session_state["rnn_resultado"] = (
-                                respuesta.json()
-                            )
+                            st.session_state["rnn_resultado"] = respuesta.json()
+                            st.session_state["rnn_corte"] = corte
+
+                            # Lo que necesita la ANN, de la misma semana de corte
+                            st.session_state["contexto_ann"] = {
+                                "fecha": fecha_corte.strftime("%d/%m/%Y"),
+                                "umbral": umbral_endemico(df, corte),
+                                "lluvia_14d": float(df["lluvia_mm"].iloc[corte - 1:corte + 1].sum()),
+                                "temp_max": float(df["temp_max_c"].iloc[corte]),
+                                "temp_min": float(df["temp_min_c"].iloc[corte]),
+                                "humedad": float(df["humedad_rel_pct"].iloc[corte])
+                            }
 
                             st.session_state.pop(
                                 "ann_resultado",
@@ -1182,34 +1263,44 @@ with tab_rnn:
                             f"Error de comunicación: {e}"
                         )
 
-                if "rnn_resultado" in st.session_state:
+                if (
+                    "rnn_resultado" in st.session_state
+                    and st.session_state.get("rnn_corte") != corte
+                ):
+
+                    st.info(
+                        "Cambiaste la semana de corte. Presiona "
+                        "«Generar pronóstico» para actualizar el resultado."
+                    )
+
+                elif "rnn_resultado" in st.session_state:
 
                     resultado = st.session_state["rnn_resultado"]
 
-                    predicciones = resultado.get(
-                        "pronostico_casos",
-                        []
-                    )
+                    predicciones = resultado.get("pronostico_casos", [])
+                    historicos = resultado.get("historico_ingresado", [])
+                    total = float(resultado.get("total_estimado_periodo", sum(predicciones)))
+                    tendencia = str(resultado.get("tendencia_general", "No disponible"))
 
-                    historicos = resultado.get(
-                        "historico_ingresado",
-                        []
-                    )
+                    umbral_4 = st.session_state["contexto_ann"]["umbral"]
 
-                    etiquetas = resultado.get(
-                        "semanas_proyectadas",
-                        []
-                    )
+                    fechas_hist = list(ultimas["fecha_inicio_semana"])
+                    fechas_fut = [f for f, _, _ in futuras]
 
-                    total = resultado.get(
-                        "total_estimado_periodo",
-                        sum(predicciones)
-                    )
+                    umbrales_hist = [
+                        umbral_semanal(df, int(fila.anio), int(fila.semana_epi))
+                        for fila in ultimas.itertuples()
+                    ]
+                    umbrales_fut = [
+                        umbral_semanal(df, anio, semana)
+                        for _, anio, semana in futuras
+                    ]
 
-                    tendencia = resultado.get(
-                        "tendencia_general",
-                        "No disponible"
-                    )
+                    reales = [
+                        float(df["casos_dengue"].iloc[corte + k])
+                        for k in range(1, 5)
+                        if corte + k <= ultimo
+                    ]
 
                     st.divider()
 
@@ -1217,92 +1308,154 @@ with tab_rnn:
                         "### Resultado del pronóstico"
                     )
 
-                    a, b, c = st.columns(3)
+                    diferencia = total - umbral_4
+
+                    a, b, c, d = st.columns(4)
 
                     with a:
-                        st.metric(
-                            "Total estimado",
-                            f"{float(total):,.1f} casos"
+                        tarjeta(
+                            "Total pronosticado",
+                            f"{total:,.0f} casos",
+                            f"{abs(diferencia):,.0f} "
+                            + ("por encima" if diferencia > 0 else "por debajo")
+                            + " del umbral",
+                            C["red"] if diferencia > 0 else C["green"]
                         )
 
                     with b:
-                        # Texto corto para que quepa en la tarjeta
-                        st.metric(
-                            "Tendencia general",
-                            {
-                                "Ascendente": "↗ Al alza",
-                                "Descendente / Estable": "↘ A la baja"
-                            }.get(str(tendencia), str(tendencia)),
-                            help=(
-                                "Compara el pronóstico de la semana +4 "
-                                "con la última semana registrada."
-                            )
+                        tarjeta(
+                            "Umbral endémico",
+                            f"{umbral_4:,.0f} casos",
+                            "Percentil 75 de esas 4 semanas en los 5 años anteriores",
+                            C["blue"]
                         )
 
                     with c:
-                        st.metric(
-                            "Horizonte",
-                            "4 semanas"
+                        tarjeta(
+                            "Tendencia",
+                            {
+                                "Ascendente": "↗ Al alza",
+                                "Descendente / Estable": "↘ A la baja"
+                            }.get(tendencia, tendencia),
+                            "Semana +4 contra la semana de corte",
+                            C["orange"]
                         )
 
-                    if (
-                        len(predicciones) == 4
-                        and len(etiquetas) == 4
-                        and len(historicos) > 0
-                    ):
+                    with d:
+                        if hay_reales:
+                            error = float(np.mean(np.abs(np.array(predicciones) - np.array(reales))))
+                            tarjeta(
+                                "Error medio",
+                                f"{error:,.0f} casos",
+                                "Por semana, contra los casos reales",
+                                C["teal"]
+                            )
+                        else:
+                            tarjeta(
+                                "Horizonte",
+                                "4 semanas",
+                                "Pronóstico a futuro",
+                                C["teal"]
+                            )
+
+                    st.markdown(" ")
+
+                    if len(predicciones) == 4 and len(historicos) == len(fechas_hist):
 
                         st.markdown(
-                            "### Evolución histórica y proyección"
-                        )
-
-                        fechas = (
-                            ultimas["fecha_inicio_semana"]
-                            .dt.strftime("%d/%m/%Y")
-                            .tolist()
+                            "### Pronóstico contra el umbral endémico"
                         )
 
                         fig = go.Figure()
 
+                        # Zona del pronóstico
+                        fig.add_shape(
+                            type="rect",
+                            x0=fecha_corte,
+                            x1=fechas_fut[-1] + pd.Timedelta(days=3),
+                            y0=0, y1=1, yref="paper",
+                            fillcolor="rgba(32,163,158,.08)",
+                            line_width=0,
+                            layer="below"
+                        )
+
                         fig.add_trace(go.Scatter(
-                            x=fechas[-len(historicos):],
-                            y=historicos,
+                            x=fechas_hist + fechas_fut,
+                            y=umbrales_hist + umbrales_fut,
                             mode="lines",
-                            name="Histórico",
-                            line=dict(
-                                color=C["blue"],
-                                width=3
-                            )
+                            name="Umbral endémico semanal",
+                            line=dict(color=C["red"], width=2, dash="dot"),
+                            hovertemplate="Umbral: %{y:,.0f}<extra></extra>"
                         ))
 
-                        # La línea del pronóstico arranca en la última semana real,
-                        # para que no quede un hueco entre las dos
                         fig.add_trace(go.Scatter(
-                            x=[fechas[-1]] + list(etiquetas),
+                            x=fechas_hist,
+                            y=historicos,
+                            mode="lines",
+                            name="Casos registrados",
+                            line=dict(color=C["blue"], width=3),
+                            hovertemplate="Registrados: %{y:,.0f}<extra></extra>"
+                        ))
+
+                        if reales:
+                            fig.add_trace(go.Scatter(
+                                x=[fechas_hist[-1]] + fechas_fut[:len(reales)],
+                                y=[historicos[-1]] + reales,
+                                mode="lines+markers",
+                                name="Casos reales (para comparar)",
+                                line=dict(color=C["orange"], width=2),
+                                marker=dict(size=[0] + [8] * len(reales)),
+                                hovertemplate="Reales: %{y:,.0f}<extra></extra>"
+                            ))
+
+                        # La línea del pronóstico arranca en la semana de corte
+                        fig.add_trace(go.Scatter(
+                            x=[fechas_hist[-1]] + fechas_fut,
                             y=[historicos[-1]] + list(predicciones),
                             mode="lines+markers",
-                            name="Pronóstico",
-                            line=dict(
-                                color=C["teal"],
-                                width=3,
-                                dash="dash"
-                            ),
-                            marker=dict(size=[0] + [9] * len(predicciones))
+                            name="Pronóstico SimpleRNN",
+                            line=dict(color=C["teal"], width=3, dash="dash"),
+                            marker=dict(size=[0] + [9] * len(predicciones)),
+                            hovertemplate="Pronóstico: %{y:,.0f}<extra></extra>"
                         ))
+
+                        fig.add_shape(
+                            type="line",
+                            x0=fecha_corte, x1=fecha_corte,
+                            y0=0, y1=1, yref="paper",
+                            line=dict(color="#718096", width=1, dash="dot")
+                        )
+
+                        fig.add_annotation(
+                            x=fecha_corte, y=1.04, yref="paper",
+                            text="Semana de corte",
+                            showarrow=False,
+                            font=dict(size=11, color="#718096")
+                        )
 
                         fig.update_layout(
                             xaxis_title="Semana",
-                            yaxis_title="Casos estimados"
+                            yaxis_title="Casos por semana",
+                            hovermode="x unified",
+                            legend=dict(orientation="h", y=-0.22)
                         )
 
                         st.plotly_chart(
-                            estilo_grafico(fig, 400),
-                            use_container_width=True
+                            estilo_grafico(fig, 430),
+                            width="stretch"
                         )
 
                         tabla = pd.DataFrame({
-                            "Semana": etiquetas,
-                            "Casos estimados": predicciones
+                            "Semana": [f.strftime("%d/%m/%Y") for f in fechas_fut],
+                            "Pronóstico": [round(p) for p in predicciones],
+                            "Umbral semanal": [
+                                round(u) if u is not None else None
+                                for u in umbrales_fut
+                            ]
                         })
+
+                        if reales:
+                            tabla["Casos reales"] = reales + [None] * (4 - len(reales))
 
                         st.markdown(
                             "### Detalle de predicciones"
@@ -1310,7 +1463,7 @@ with tab_rnn:
 
                         st.dataframe(
                             tabla,
-                            use_container_width=True,
+                            width="stretch",
                             hide_index=True
                         )
 
@@ -1322,17 +1475,11 @@ with tab_rnn:
                         )
 
                     st.caption(
-                        "Modelo: " + str(
-                            resultado.get(
-                                "modelo_utilizado",
-                                "No especificado"
-                            )
-                        )
-                    )
-
-                    st.caption(
-                        "Las cifras son estimaciones del modelo, "
-                        "no datos oficiales."
+                        "Modelo: " + str(resultado.get("modelo_utilizado", "No especificado"))
+                        + ". Las cifras son estimaciones del modelo, no datos oficiales. "
+                        "El umbral semanal es el percentil 75 de esa misma semana en los 5 años anteriores; "
+                        "antes de 2017 no hay suficientes años previos, así que no se dibuja y el umbral "
+                        "de las 4 semanas es un promedio aproximado."
                     )
 
         except Exception as e:
@@ -1345,6 +1492,83 @@ with tab_rnn:
 # ============================================================
 # 13. ANN: PREVENCIÓN
 # ============================================================
+
+COLORES_ACCION = {
+    "alerta_sanitaria": C["red"],
+    "fumigacion_focalizada": C["orange"],
+    "eliminacion_criaderos": C["teal"],
+    "monitoreo_normal": C["green"]
+}
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def pedir_accion(casos, umbral, lluvia, temp_max, temp_min, humedad, aegypti):
+    """Llama a la ANN de la API (se guarda en caché para no repetir la misma consulta)."""
+    respuesta = requests.post(
+        f"{API}/predict/accion",
+        json={
+            "casos_pred_4sem": casos,
+            "casos_umbral_endemico": umbral,
+            "lluvia_14d_mm": lluvia,
+            "temp_max": temp_max,
+            "temp_min": temp_min,
+            "humedad": humedad,
+            "aegypti_detectado": aegypti
+        },
+        timeout=TIMEOUT
+    )
+    respuesta.raise_for_status()
+    return respuesta.json()
+
+
+def tarjeta_accion(resultado, titulo="RECOMENDACIÓN DEL MODELO ANN"):
+
+    accion = resultado.get("accion", "No disponible")
+    color = COLORES_ACCION.get(accion, C["blue"])
+    nombre = accion.replace("_", " ").capitalize()
+    motivo = resultado.get("motivo", "No se proporcionó una explicación.")
+    confianza = float(resultado.get("confianza_pct", 0))
+
+    html(f"""
+    <div style="
+        background:white;
+        border-radius:16px;
+        border:1px solid #E2EAF0;
+        border-top:5px solid {color};
+        padding:25px;
+        box-shadow:0 5px 20px rgba(16,42,67,.05);
+    ">
+        <div style="
+            color:#718096;
+            font-size:11px;
+            font-weight:700;
+            letter-spacing:1.5px;
+        ">{titulo}</div>
+        <div style="
+            color:#102A43;
+            font-size:28px;
+            font-weight:800;
+            margin-top:12px;
+        ">{nombre}</div>
+        <div style="
+            color:#486581;
+            font-size:14px;
+            line-height:1.7;
+            margin-top:13px;
+        ">{motivo}</div>
+        <div style="
+            display:inline-block;
+            background:#E8F5F2;
+            color:#087F70;
+            padding:8px 13px;
+            border-radius:20px;
+            font-size:12px;
+            font-weight:700;
+            margin-top:17px;
+        ">Confianza: {confianza:.2f}%</div>
+    </div>
+    """)
+
 
 with tab_ann:
 
@@ -1372,38 +1596,32 @@ with tab_ann:
 
             df = cargar_dengue()
 
-            ultima = df.iloc[-1]
-
-            ultimas_dos = df.tail(2)
-
             resultado_rnn = st.session_state["rnn_resultado"]
 
             casos_predichos = float(
                 resultado_rnn.get(
                     "total_estimado_periodo",
-                    sum(
-                        resultado_rnn.get(
-                            "pronostico_casos",
-                            []
-                        )
-                    )
+                    sum(resultado_rnn.get("pronostico_casos", []))
                 )
             )
 
-            lluvia = float(
-                ultimas_dos["lluvia_mm"].sum()
-            )
+            # Clima y umbral de la misma semana de corte del pronóstico
+            contexto = st.session_state.get("contexto_ann") or {
+                "fecha": df["fecha_inicio_semana"].iloc[-1].strftime("%d/%m/%Y"),
+                "umbral": umbral_endemico(df),
+                "lluvia_14d": float(df.tail(2)["lluvia_mm"].sum()),
+                "temp_max": float(df.iloc[-1]["temp_max_c"]),
+                "temp_min": float(df.iloc[-1]["temp_min_c"]),
+                "humedad": float(df.iloc[-1]["humedad_rel_pct"])
+            }
 
-            temp_max = float(
-                ultima["temp_max_c"]
-            )
+            lluvia = contexto["lluvia_14d"]
+            temp_max = contexto["temp_max"]
+            temp_min = contexto["temp_min"]
+            humedad = contexto["humedad"]
 
-            temp_min = float(
-                ultima["temp_min_c"]
-            )
-
-            humedad = float(
-                ultima["humedad_rel_pct"]
+            st.caption(
+                f"Indicadores de la semana de corte del pronóstico: {contexto['fecha']}."
             )
 
             st.markdown(
@@ -1413,16 +1631,14 @@ with tab_ann:
             a, b, c = st.columns(3)
 
             with a:
-
                 tarjeta(
                     "Casos proyectados",
-                    f"{casos_predichos:.1f}",
+                    f"{casos_predichos:,.1f}",
                     "Próximas cuatro semanas",
                     C["blue"]
                 )
 
             with b:
-
                 tarjeta(
                     "Lluvia acumulada",
                     f"{lluvia:.1f} mm",
@@ -1431,11 +1647,10 @@ with tab_ann:
                 )
 
             with c:
-
                 tarjeta(
                     "Humedad relativa",
                     f"{humedad:.1f}%",
-                    "Último registro disponible",
+                    "Semana de corte",
                     C["green"]
                 )
 
@@ -1449,21 +1664,10 @@ with tab_ann:
                     "### Condiciones climáticas"
                 )
 
-                st.write(
-                    f"Temperatura máxima: **{temp_max:.1f} °C**"
-                )
-
-                st.write(
-                    f"Temperatura mínima: **{temp_min:.1f} °C**"
-                )
-
-                st.write(
-                    f"Humedad relativa: **{humedad:.1f}%**"
-                )
-
-                st.write(
-                    f"Precipitación 14 días: **{lluvia:.1f} mm**"
-                )
+                st.write(f"Temperatura máxima: **{temp_max:.1f} °C**")
+                st.write(f"Temperatura mínima: **{temp_min:.1f} °C**")
+                st.write(f"Humedad relativa: **{humedad:.1f}%**")
+                st.write(f"Precipitación 14 días: **{lluvia:.1f} mm**")
 
             with col_b:
 
@@ -1471,12 +1675,10 @@ with tab_ann:
                     "### Indicadores epidemiológicos"
                 )
 
-                umbral_calculado = umbral_endemico(df)
-
                 umbral = st.number_input(
                     "Umbral endémico de referencia",
                     min_value=1.0,
-                    value=umbral_calculado,
+                    value=float(contexto["umbral"]),
                     step=1.0
                 )
 
@@ -1488,10 +1690,7 @@ with tab_ann:
 
                 aegypti = st.checkbox(
                     "Se detectó Aedes aegypti",
-                    value=st.session_state.get(
-                        "cnn_aegypti",
-                        False
-                    )
+                    value=st.session_state.get("cnn_aegypti", False)
                 )
 
                 if "especie_detectada" in st.session_state:
@@ -1505,28 +1704,10 @@ with tab_ann:
 
             ejecutar_ann = st.button(
                 "🧠 Generar recomendación preventiva",
-                use_container_width=True
+                width="stretch"
             )
 
             if ejecutar_ann:
-
-                datos = {
-
-                    "casos_pred_4sem": casos_predichos,
-
-                    "casos_umbral_endemico": float(umbral),
-
-                    "lluvia_14d_mm": lluvia,
-
-                    "temp_max": temp_max,
-
-                    "temp_min": temp_min,
-
-                    "humedad": humedad,
-
-                    "aegypti_detectado": int(aegypti)
-
-                }
 
                 try:
 
@@ -1534,126 +1715,123 @@ with tab_ann:
                         "La ANN está evaluando los indicadores..."
                     ):
 
-                        respuesta = requests.post(
-                            f"{API}/predict/accion",
-                            json=datos,
-                            timeout=TIMEOUT
+                        st.session_state["ann_resultado"] = pedir_accion(
+                            casos_predichos, float(umbral), lluvia,
+                            temp_max, temp_min, humedad, int(aegypti)
                         )
-
-                    if respuesta.status_code == 200:
-
-                        st.session_state["ann_resultado"] = (
-                            respuesta.json()
-                        )
-
-                    else:
-
-                        error_api(respuesta)
 
                 except requests.exceptions.RequestException as e:
 
                     st.error(
-                        f"Error de conexión: {e}"
+                        f"Error de conexión con la API: {e}"
                     )
 
             if "ann_resultado" in st.session_state:
 
                 resultado = st.session_state["ann_resultado"]
 
-                accion = resultado.get(
-                    "accion",
-                    "No disponible"
-                )
-
-                motivo = resultado.get(
-                    "motivo",
-                    "No se proporcionó una explicación."
-                )
-
-                confianza = float(
-                    resultado.get(
-                        "confianza_pct",
-                        0
-                    )
-                )
-
-                colores = {
-                    "alerta_sanitaria": C["red"],
-                    "fumigacion_focalizada": C["orange"],
-                    "eliminacion_criaderos": C["teal"],
-                    "monitoreo_normal": C["green"]
-                }
-
-                color = colores.get(
-                    accion,
-                    C["blue"]
-                )
-
-                nombre = accion.replace(
-                    "_",
-                    " "
-                ).capitalize()
-
                 st.divider()
 
-                html(f"""
-                <div style="
-                    background:white;
-                    border-radius:16px;
-                    border:1px solid #E2EAF0;
-                    border-top:5px solid {color};
-                    padding:25px;
-                    box-shadow:0 5px 20px rgba(16,42,67,.05);
-                ">
-
-                    <div style="
-                        color:#718096;
-                        font-size:11px;
-                        font-weight:700;
-                        letter-spacing:1.5px;
-                    ">
-                        RECOMENDACIÓN DEL MODELO ANN
-                    </div>
-
-                    <div style="
-                        color:#102A43;
-                        font-size:28px;
-                        font-weight:800;
-                        margin-top:12px;
-                    ">{nombre}</div>
-
-                    <div style="
-                        color:#486581;
-                        font-size:14px;
-                        line-height:1.7;
-                        margin-top:13px;
-                    ">{motivo}</div>
-
-                    <div style="
-                        display:inline-block;
-                        background:#E8F5F2;
-                        color:#087F70;
-                        padding:8px 13px;
-                        border-radius:20px;
-                        font-size:12px;
-                        font-weight:700;
-                        margin-top:17px;
-                    ">
-                        Confianza: {confianza:.2f}%
-                    </div>
-
-                </div>
-                """)
+                tarjeta_accion(resultado)
 
                 mostrar_probabilidades(
                     resultado.get("probabilidades", {}),
-                    "Distribución de probabilidades"
+                    "Distribución de probabilidades",
+                    clave="prob_ann_real"
                 )
 
                 st.caption(
                     "La recomendación es orientativa y debe ser "
                     "validada por personal responsable."
                 )
+
+            # ---------------- ¿Qué pasaría si...? ----------------
+
+            st.divider()
+
+            st.markdown(
+                "### ¿Qué pasaría si…?"
+            )
+
+            st.caption(
+                "Mueve los valores y mira cómo cambiaría la recomendación de la ANN. "
+                "Es una simulación: no cambia los datos reales."
+            )
+
+            # Las claves cambian con cada pronóstico, para que los
+            # deslizadores arranquen en los valores reales de esa semana
+            sufijo = str(st.session_state.get("rnn_corte", "base"))
+
+            col_sim, col_res = st.columns([1, 1.15])
+
+            with col_sim:
+
+                tope_casos = int(max(3 * umbral, 2 * casos_predichos, 500))
+
+                casos_si = st.slider(
+                    "Casos pronosticados (4 semanas)",
+                    min_value=0,
+                    max_value=tope_casos,
+                    value=min(int(round(casos_predichos)), tope_casos),
+                    step=5,
+                    key=f"si_casos_{sufijo}"
+                )
+
+                lluvia_si = st.slider(
+                    "Lluvia de 14 días (mm)",
+                    min_value=0,
+                    max_value=400,
+                    value=int(round(min(lluvia, 400))),
+                    step=5,
+                    key=f"si_lluvia_{sufijo}"
+                )
+
+                temp_max_si = st.slider(
+                    "Temperatura máxima (°C)",
+                    min_value=20.0,
+                    max_value=36.0,
+                    value=float(round(min(max(temp_max, 20.0), 36.0), 1)),
+                    step=0.1,
+                    key=f"si_tmax_{sufijo}"
+                )
+
+                aegypti_si = st.toggle(
+                    "Se detectó Aedes aegypti",
+                    value=bool(aegypti),
+                    key=f"si_aegypti_{sufijo}"
+                )
+
+                st.caption(
+                    f"Referencias de las reglas: umbral {umbral:,.0f} casos · "
+                    f"doble del umbral {2 * umbral:,.0f} · lluvia 80 mm · "
+                    "temperatura máxima 27 °C."
+                )
+
+            with col_res:
+
+                try:
+
+                    simulado = pedir_accion(
+                        float(casos_si), float(umbral), float(lluvia_si),
+                        float(temp_max_si), temp_min, humedad, int(aegypti_si)
+                    )
+
+                    tarjeta_accion(
+                        simulado,
+                        "RECOMENDACIÓN SIMULADA"
+                    )
+
+                    mostrar_probabilidades(
+                        simulado.get("probabilidades", {}),
+                        "Probabilidades simuladas",
+                        clave="prob_ann_simulada"
+                    )
+
+                except requests.exceptions.RequestException as e:
+
+                    st.error(
+                        f"Error de conexión con la API: {e}"
+                    )
 
         except Exception as e:
 

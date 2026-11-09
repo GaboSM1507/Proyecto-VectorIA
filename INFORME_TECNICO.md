@@ -92,7 +92,9 @@ El primer módulo utiliza una red neuronal convolucional (CNN), especializada en
 
 Se desarrolló una CNN propia desde cero y se realizó una comparación con MobileNetV2, una arquitectura que utiliza aprendizaje por transferencia.
 
-La evaluación se realizó con un conjunto de prueba de 251 imágenes: 123 de Aedes aegypti, 120 de Aedes albopictus y 8 de Culex. El análisis de las imágenes y la separación entre entrenamiento y prueba están en el notebook `02_CNN_Mosquitos.ipynb`; el entrenamiento y la evaluación de las dos redes, en `src/train/entrenar_mosquitos.py`.
+La evaluación se realizó con un conjunto de prueba de 251 imágenes: 123 de Aedes aegypti, 120 de Aedes albopictus y 8 de Culex. Todo el módulo está en el notebook `02_CNN_Mosquitos.ipynb`: el análisis de las imágenes y la separación entre entrenamiento y prueba (secciones 1 a 3), y el entrenamiento y la evaluación (sección 4). La sección 4 agrega una CNN propia mejorada, también desde cero: fotos de 192 × 192, dos capas convolucionales por bloque, BatchNormalization y más aumento de datos. También elige la CNN propia solo con los datos de validación y evalúa una sola vez en prueba.
+
+Las cifras de esta sección corresponden a la evaluación registrada antes de agregar la sección 4. Se actualizarán con lo que dé esa sección al correrla con las imágenes.
 
 **Resultados obtenidos:**
 
@@ -217,7 +219,7 @@ Entre sus principales rutas se encuentran:
 |---|---|
 | `GET /` | Verificar el funcionamiento de la API. |
 | `POST /predict/mosquito` | Clasificar una imagen de mosquito. |
-| `POST /predict/rnn` | Generar el pronóstico de casos a partir de las últimas 26 semanas. |
+| `POST /predict/casos` | Generar el pronóstico de casos de las 4 semanas siguientes a partir de 26 semanas (también responde en `/predict/rnn`, el nombre anterior). |
 | `POST /predict/accion` | Recomendar una acción preventiva. |
 
 La API valida los datos de entrada: por ejemplo, el pronóstico exige exactamente 26 semanas y la humedad debe estar entre 0 y 100 %.
@@ -232,8 +234,8 @@ La aplicación cuenta con cinco pestañas:
 
 1. **Resumen:** muestra el estado de la API y de los modelos, y los casos del último año.
 2. **Identificación CNN:** permite cargar una imagen y obtener la especie, con la probabilidad de cada clase.
-3. **Pronóstico RNN:** toma las últimas 26 semanas de `dengue_procesado.csv` y pronostica las cuatro siguientes.
-4. **Prevención ANN:** usa ese pronóstico, el clima reciente, el umbral endémico calculado con los datos históricos y el resultado de la CNN para recomendar una acción preventiva.
+3. **Pronóstico RNN:** el usuario elige una semana; la SimpleRNN usa las 26 semanas que terminan ahí y pronostica las cuatro siguientes. El gráfico compara el pronóstico con el umbral endémico semanal (percentil 75 de esa misma semana en los 5 años anteriores) y, si se eligió una semana pasada, con los casos que de verdad hubo.
+4. **Prevención ANN:** usa ese pronóstico, el clima de la semana elegida, el umbral endémico calculado con los datos históricos y el resultado de la CNN para recomendar una acción preventiva con su motivo. Incluye un simulador "¿Qué pasaría si…?": con deslizadores de casos, lluvia, temperatura y detección de Aedes, se ve cómo cambiaría la recomendación.
 5. **Mapa cantonal:** mapa de Costa Rica coloreado según los casos de cada cantón, en escala logarítmica para que se distingan los cantones con pocos casos. Incluye una animación de 2013 a 2018, una vista 3D en la que cada cantón se eleva según sus casos, el ranking de cantones y la evolución anual por provincia, con filtros por provincia y año. El mapa funciona sin internet, porque las fronteras de los cantones vienen dentro del proyecto; solo el mapa de fondo de la vista 3D necesita conexión.
 
 ## 7. Evaluación general de resultados
@@ -245,6 +247,21 @@ Los resultados obtenidos permiten identificar el desempeño de cada uno de los m
 - **ANN:** alcanzó una exactitud promedio de 90.8 %, aunque la categoría de eliminación de criaderos todavía necesita mejoras.
 
 En conjunto, los resultados demuestran que los modelos pueden aportar herramientas de apoyo para la identificación de vectores, el análisis de tendencias y la recomendación de medidas preventivas.
+
+### 7.1. Cumplimiento de lo que pide el enunciado
+
+| Parte | Qué pide el enunciado | Resultado | ¿Cumple? |
+|---|---|---|---|
+| Módulo 1 (CNN) | CNN propia desde cero (obligatoria), F1 macro ≥ 85 % | 53.97 % | No. Se agregó una CNN propia mejorada (sección 4 del notebook 02), pendiente de correr con las imágenes |
+| Módulo 1 (CNN) | MobileNetV2 con transfer learning como comparación, F1 macro | 88.30 % | Sí |
+| Módulo 2 (RNN/LSTM) | SimpleRNN (base) y LSTM (principal); RMSE y MAE contra el baseline estacional | SimpleRNN 260 / 175 y LSTM 494 / 334, contra 638 / 456 | Sí: las dos superan al baseline |
+| Módulo 3 (ANN) | Clasificador multiclase, separación por semana, precisión y recall ≥ 85 % | 6 de 8 métricas sobre 85 %; eliminación de criaderos con 0.82 / 0.78 | Parcial |
+| Aplicación | Subir foto, elegir semana y ver el pronóstico contra el umbral endémico, recomendación con motivo, mapa de calor por cantón | Las cuatro funciones | Sí |
+| Aplicación | Extra: deslizadores "¿qué pasaría si?" | Simulador en la pestaña de prevención | Sí |
+| Aplicación | Aviso fijo: no diagnostica dengue en personas | En la parte superior de la aplicación | Sí |
+| API | `/predict/mosquito`, `/predict/casos` y `/predict/accion` | Los tres endpoints, documentados en `/docs` | Sí |
+| Entregables | README, notebooks de EDA y entrenamiento, modelos, aplicación, API, informe y código en GitHub | Todos | Sí |
+| Extra | Docker | — | No se hizo |
 
 ## 8. Limitaciones del proyecto
 
@@ -260,18 +277,31 @@ Durante el desarrollo se identificaron algunas limitaciones que deben considerar
 - La lluvia de NASA POWER se estima con un modelo (MERRA-2), no con estaciones. La semana del 26 de mayo de 2024 marca 625 mm, la más lluviosa de toda la serie, pero ni ERA5 (entre 14 y 36 mm ese día en las mismas ciudades) ni las estaciones del IMN registran esa lluvia, por lo que se considera un error de la fuente. No se eliminó, para no cambiar los archivos que usan los modelos. Su efecto en el pronóstico es pequeño: cambiando esa semana por el valor de ERA5, el RMSE de la SimpleRNN pasa de 260.2 a 255.4. También afecta la lluvia de 14 días de `vectoria_acciones.csv` en las semanas del 26 de mayo y el 2 de junio de 2024, aunque sus etiquetas no cambian.
 - El archivo `vectoria_dengue_semanal.csv` es sintético y no representa cifras oficiales. Solo se usa en el EDA; ningún modelo se entrenó con él.
 - La información cantonal disponible corresponde al período 2013–2018 y sus totales no coinciden con los datos nacionales. Por ello, la pestaña cantonal debe utilizarse para comparaciones entre cantones dentro de ese conjunto, no para representar directamente los totales nacionales.
-- En la aplicación, la precipitación de 14 días se aproxima sumando los valores de las dos últimas semanas. La temperatura y la humedad se toman de la última semana disponible.
+- En la aplicación, la precipitación de 14 días se aproxima sumando la lluvia de la semana elegida y la anterior. La temperatura y la humedad se toman de la semana elegida.
 - La aplicación calcula el umbral endémico con los datos históricos (percentil 75 de los casos de esas mismas 4 semanas en los 5 años anteriores), con la misma fórmula de los datos de entrenamiento de la ANN. No es un umbral oficial del Ministerio de Salud, y puede ajustarse manualmente.
 - Las imágenes de entrenamiento no se incluyen en el repositorio debido a su tamaño.
 
 Estas limitaciones deben tenerse presentes antes de utilizar el sistema en situaciones reales.
 
-## 9. Posibles mejoras futuras
+## 9. Recomendaciones y mejoras futuras
+
+### 9.1. Recomendaciones de uso
+
+A partir de los resultados, se recomienda a quienes usen VectorIA en la vigilancia del dengue:
+
+- **Usarlo como apoyo, junto con el canal endémico oficial.** Si el Ministerio de Salud tiene un umbral oficial para esas semanas, conviene escribirlo en la aplicación en lugar del calculado.
+- **Tomar el pronóstico en época de brote como un mínimo.** Las redes subestiman los brotes, así que un pronóstico cercano al umbral ya justifica reforzar la vigilancia.
+- **Aprovechar el retraso del clima como alerta temprana.** La temperatura mínima se relaciona con los casos de 6 a 8 semanas después, lo que da tiempo para preparar acciones.
+- **Priorizar los cantones que concentran los casos.** En 2013–2018, 10 de 72 cantones sumaron el 49 % de los casos, y Guanacaste, Puntarenas y Limón el 68 %.
+- **Usar la identificación de mosquitos solo con fotos claras de un mosquito.** La CNN siempre responde una especie y no reemplaza la identificación de un especialista.
+- **Revisar los datos de clima extremos antes de usarlos,** como la semana del 26 de mayo de 2024, que resultó ser un error de la fuente.
+
+### 9.2. Mejoras futuras
 
 Para continuar fortaleciendo VectorIA, se proponen las siguientes mejoras:
 
-- Ampliar y mejorar el conjunto de imágenes de mosquitos.
-- Optimizar la CNN propia para aumentar su capacidad de clasificación.
+- Ampliar y mejorar el conjunto de imágenes de mosquitos, por ejemplo con Mosquito Alert, sobre todo para Culex.
+- Optimizar la CNN propia para aumentar su capacidad de clasificación. La sección 4 del notebook 02 ya incluye una versión mejorada.
 - Agregar a la CNN una clase para imágenes que no son mosquitos.
 - Mejorar la detección de la categoría de eliminación de criaderos en el modelo ANN.
 - Comparar SimpleRNN y LSTM con un período de validación que incluya un brote.
@@ -281,6 +311,7 @@ Para continuar fortaleciendo VectorIA, se proponen las siguientes mejoras:
 - Mejorar la información geográfica por cantón.
 - Evaluar los pronósticos con nuevos períodos de datos reales.
 - Incorporar mecanismos de actualización y monitoreo del rendimiento de los modelos.
+- Empaquetar el sistema con Docker para facilitar su instalación.
 
 ## 10. Conclusiones
 

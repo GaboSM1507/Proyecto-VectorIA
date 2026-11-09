@@ -270,8 +270,10 @@ def predict_accion(data: AccionInput):
 # 7. MÓDULO RNN: PREDICCIÓN DE CASOS DE DENGUE
 # ============================================================
 
-@app.post("/predict/rnn", summary="Pronóstico de dengue con SimpleRNN")
-
+# /predict/casos es el nombre que pide el enunciado. /predict/rnn se mantiene
+# por compatibilidad (hace exactamente lo mismo) y no aparece en /docs.
+@app.post("/predict/casos", summary="Pronóstico de casos de dengue (SimpleRNN)")
+@app.post("/predict/rnn", include_in_schema=False)
 def predict_rnn(data: RNNForecastInput):
 
     if not rnn_ready:

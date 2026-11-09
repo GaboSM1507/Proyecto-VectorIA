@@ -47,7 +47,7 @@ Se desarrollaron y compararon dos modelos:
 
 La evaluación se realizó mediante la métrica F1-score macro, utilizando un conjunto de prueba de 251 imágenes (123 de aegypti, 120 de albopictus y 8 de Culex).
 
-El análisis de las imágenes y la separación entre entrenamiento y prueba están en `notebooks/02_CNN_Mosquitos.ipynb`. El entrenamiento y la evaluación de las dos redes están en `src/train/entrenar_mosquitos.py`.
+Todo el Módulo 1 está en `notebooks/02_CNN_Mosquitos.ipynb`: el análisis de las imágenes y la separación entre entrenamiento y prueba (secciones 1 a 3), y el entrenamiento y la evaluación de las redes (sección 4). La sección 4 incluye una CNN propia mejorada (`crear_cnn_v2` en `src/train/cnn.py`), también desde cero, elige la CNN propia con los datos de validación y guarda los resultados calculados en `models/mosquitos_resultados.json`. Para correrla hacen falta las imágenes en `data/raw/imagenes/`, que no se incluyen en el repositorio. `src/train/entrenar_mosquitos.py` es la versión anterior del entrenamiento.
 
 #### Resultados de la CNN
 
@@ -152,8 +152,8 @@ Cuenta con cinco pestañas:
 |---|---|
 | Resumen | Presenta el estado de la API y de los modelos, y los casos del último año. |
 | Identificación CNN | Permite cargar una imagen y obtener la clasificación mediante CNN. |
-| Pronóstico RNN | Toma las últimas 26 semanas y pronostica los casos de las próximas cuatro. |
-| Prevención ANN | Utiliza el pronóstico, el clima reciente y el resultado de la CNN para recomendar una acción. |
+| Pronóstico RNN | Se elige una semana; la SimpleRNN usa las 26 semanas que terminan ahí y pronostica las 4 siguientes. El gráfico las compara con el umbral endémico y, si son semanas pasadas, con los casos reales. |
+| Prevención ANN | Utiliza el pronóstico, el clima de esa semana, el umbral endémico y el resultado de la CNN para recomendar una acción con su motivo. Incluye un simulador "¿Qué pasaría si…?" con deslizadores de casos, lluvia y temperatura. |
 | Mapa cantonal | Mapa de Costa Rica coloreado según los casos de cada cantón, con animación de 2013 a 2018, vista 3D, ranking de cantones y evolución anual, con filtros por provincia y año. |
 
 La aplicación conecta los modelos mediante una API desarrollada con FastAPI.
@@ -343,7 +343,7 @@ La API permite que la aplicación se comunique con los modelos entrenados.
 |---|---|---|
 | GET | `/` | Comprueba el estado del servicio. |
 | POST | `/predict/mosquito` | Clasifica una imagen de mosquito mediante CNN. |
-| POST | `/predict/rnn` | Pronostica los casos de dengue de las próximas cuatro semanas. |
+| POST | `/predict/casos` | Pronostica los casos de dengue de las próximas cuatro semanas a partir de 26 semanas (SimpleRNN). También responde en `/predict/rnn`, el nombre anterior. |
 | POST | `/predict/accion` | Recomienda una acción preventiva mediante ANN. |
 
 Los endpoints pueden probarse desde la documentación interactiva de FastAPI.

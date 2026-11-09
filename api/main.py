@@ -82,7 +82,11 @@ DATA_DIR = os.path.join(PROJECT_ROOT, "data", "processed")
 # 2. RUTAS DE LOS MODELOS Y DATOS
 # ============================================================
 
-cnn_model_path = os.path.join(MODELS_DIR, "mobilenet_mosquitos.keras")
+# MobileNetV2 con la última capa reentrenada agregando fotos de Mosquito Alert (fondos variados):
+# notebook 02, sección 6. Si no está, se usa la MobileNetV2 original.
+cnn_model_path = os.path.join(MODELS_DIR, "mobilenet_mosquitos_ma.keras")
+if not os.path.exists(cnn_model_path):
+    cnn_model_path = os.path.join(MODELS_DIR, "mobilenet_mosquitos.keras")
 cnn_clases_path = os.path.join(MODELS_DIR, "mosquitos_clases.json")
 
 ann_model_path = os.path.join(MODELS_DIR, "ann_acciones.keras")
@@ -134,7 +138,7 @@ try:
         cnn_clases = json.load(archivo)
 
     cnn_ready = True
-    print("CNN MobileNetV2 cargada correctamente.")
+    print(f"CNN MobileNetV2 cargada correctamente ({os.path.basename(cnn_model_path)}).")
 
 except Exception as e:
     print(f"Error cargando CNN: {e}")
@@ -701,7 +705,8 @@ def predict_rnn(data: Annotated[RNNForecastInput, Body(openapi_examples=EJEMPLOS
 
 async def predict_mosquito(file: UploadFile = File(..., description="Foto del mosquito (JPG o PNG).")):
     """
-    Sube una foto y la red (MobileNetV2 con transfer learning) devuelve la especie,
+    Sube una foto y la red (MobileNetV2 con transfer learning, reentrenada también con fotos de
+    Mosquito Alert con fondos variados) devuelve la especie,
     la confianza y la probabilidad de cada clase.
     """
 
@@ -1370,11 +1375,17 @@ def tarjeta_modulo(icono, titulo, red, metodo, ruta, texto, dato, listo):
 def pagina_inicio():
     """Página de inicio de la API: estado, módulos y gráficos en vivo."""
     # Datos de los modelos tomados de los archivos, no escritos a mano
-    dato_cnn = "Modelo: mobilenet_mosquitos.keras"
+    dato_cnn = f"Modelo: {os.path.basename(cnn_model_path)}"
     try:
         with open(os.path.join(MODELS_DIR, "mosquitos_resultados.json"), encoding="utf-8") as archivo:
-            f1 = json.load(archivo)["mobilenetv2"]["f1_macro"]
-        dato_cnn = f"F1 macro en test: <b>{100 * f1:.1f} %</b>"
+            resultados_cnn = json.load(archivo)
+        if cnn_model_path.endswith("_ma.keras"):
+            prueba = resultados_cnn["experimento_mosquito_alert"]["prueba"]
+            clave = next(k for k in prueba if k.startswith("MobileNetV2 con Mosquito Alert | Mosquito Alert"))
+            dato_cnn = (f"F1 macro en prueba: <b>{100 * prueba[clave]['f1_macro']:.2f} %</b> con fotos de celular "
+                        f"(Mosquito Alert)")
+        else:
+            dato_cnn = f"F1 macro en test: <b>{100 * resultados_cnn['mobilenetv2']['f1_macro']:.1f} %</b>"
     except Exception:
         pass
 

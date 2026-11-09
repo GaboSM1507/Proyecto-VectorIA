@@ -72,7 +72,16 @@ Para resolverlo, cada foto se recorta alrededor del mosquito antes de reducirla.
 
 La CNN propia con recorte **supera la meta del 85 %** y acierta 112 de las 123 fotos de *aegypti*. Las 3 que llama *Culex* son las de *aegypti* con fondo blanco (Mendeley), el mismo fondo de las fotos de *Culex*: para *Culex*, la red se apoya en parte en el fondo (ver las limitaciones). Se eligió con validación (F1 de 0.956) y se evaluó una sola vez en prueba. Las 22 fotos de *Culex* de IEEE DataPort no se pudieron volver a descargar, porque la página pide una suscripción de pago. Por eso este experimento usa 247 fotos de prueba en vez de 251, con solo 4 de *Culex*, y todos los modelos se compararon con esas mismas fotos.
 
-La aplicación sigue usando MobileNetV2: recibe la foto completa, mientras que el recorte depende de un fondo parejo como el de las fotos de Kaggle.
+#### MobileNetV2 con Mosquito Alert (sección 6): la que usa la aplicación
+
+Casi todas las fotos de *Culex* venían de Mendeley (fondo blanco) y las de *aegypti* y *albopictus* de Kaggle (fondo azul), así que las redes aprendieron en parte el fondo. Para corregirlo se agregaron fotos de **Mosquito Alert 2023**, una de las fuentes del enunciado: fotos de celular con fondos muy variados. Se volvió a entrenar la última capa de MobileNetV2 con las fotos de antes más 847 de Mosquito Alert.
+
+| Modelo (fotos de prueba que no se usaron para entrenar) | Mosquito Alert (128 fotos de celular) | Kaggle y Mendeley (247) |
+|---|---:|---:|
+| MobileNetV2 original | 24.96 % | 85.33 % |
+| **MobileNetV2 con Mosquito Alert (la de la aplicación)** | **70.05 %** | 84.22 % |
+
+Con fotos de celular, la MobileNetV2 original llamaba *Culex* a casi todo; la reentrenada acierta 50 de 61 *albopictus* y 58 de 60 *Culex*. Se eligió con validación (F1 de 0.861 contra 0.700) y es la que usa la aplicación (`models/mobilenet_mosquitos_ma.keras`). En las fotos de Kaggle y Mendeley baja un poco (de 85.33 % a 84.22 %), a cambio de funcionar con fotos reales. La CNN propia con recorte no se usa en la aplicación porque el recorte depende de un fondo parejo como el de Kaggle.
 
 ### Módulo 2. Pronóstico de casos de dengue (RNN/LSTM)
 
@@ -180,7 +189,7 @@ Cuenta con cinco pestañas:
 | Pestaña | Funcionalidad |
 |---|---|
 | Resumen | Presenta el estado de la API y de los modelos, y los casos del último año. |
-| Identificación CNN | Permite cargar una imagen y obtener la clasificación mediante CNN. |
+| Identificación CNN | Permite cargar una imagen y obtener la especie con la MobileNetV2 reentrenada con fotos de Mosquito Alert. |
 | Pronóstico RNN | Se elige una semana; la SimpleRNN usa las 26 semanas que terminan ahí y pronostica las 4 siguientes. El gráfico las compara con el umbral endémico y, si son semanas pasadas, con los casos reales. Un selector cambia al bonus por provincia (datos sintéticos), con un ranking de las 7 provincias según su umbral. |
 | Prevención ANN | Utiliza el pronóstico, el clima de esa semana, el umbral endémico y el resultado de la CNN para recomendar una acción con su motivo. Incluye un simulador "¿Qué pasaría si…?" con deslizadores de casos, lluvia y temperatura. |
 | Mapa cantonal | Mapa de Costa Rica coloreado según los casos de cada cantón, con animación de 2013 a 2018, vista 3D, ranking de cantones y evolución anual, con filtros por provincia y año. |
@@ -225,6 +234,7 @@ Proyecto-VectorIA/
 │   └── processed/
 │       ├── dengue_procesado.csv
 │       ├── dengue_provincias_limpio.csv
+│       ├── inventario_mosquito_alert.csv
 │       └── inventario_imagenes.csv
 │
 ├── notebooks/
@@ -249,6 +259,7 @@ Proyecto-VectorIA/
 │   ├── ann_acciones_preprocesado.pkl
 │   ├── ann_columns.pkl
 │   ├── mobilenet_mosquitos.keras
+│   ├── mobilenet_mosquitos_ma.keras   (la de la app: reentrenada con Mosquito Alert)
 │   ├── cnn_mosquitos.keras
 │   ├── cnn_mosquitos_mejorada.keras
 │   ├── cnn_mosquitos_v2.keras
@@ -295,6 +306,7 @@ Entre las fuentes de imágenes consideradas se encuentran:
 - [IEEE DataPort – Image Dataset of Aedes and Culex Mosquito Species](https://ieee-dataport.org/open-access/image-dataset-aedes-and-culex-mosquito-species)
 - [Mendeley Data – Dataset of Vector Mosquito Images](https://data.mendeley.com/datasets/88s6fvgg2p)
 - [Kaggle – Aedes Mosquitos Dataset](https://www.kaggle.com/datasets/pradeepisawasan/aedes-mosquitos)
+- [Mosquito Alert – AI Mosquito Alert Challenge Dataset 2023](https://zenodo.org/records/15063886) (CC BY-NC-SA 4.0)
 
 ## 8. Instalación y ejecución
 
@@ -398,7 +410,7 @@ Aunque VectorIA integra los tres modelos y permite utilizarlos desde una aplicac
 - La ANN se entrenó con escenarios simulados y etiquetas generadas con reglas, no con decisiones reales de las autoridades sanitarias.
 - El año de validación del Módulo 2 (2022) no tuvo brote; con un año que incluya un brote, la comparación entre SimpleRNN y LSTM podría cambiar.
 - Ninguna red del Módulo 2 supera a la persistencia (repetir la última semana), y las dos subestiman los brotes.
-- La prueba de la CNN tiene solo 8 fotos de Culex, y cada especie viene sobre todo de una fuente distinta, así que la red podría estar aprendiendo la fuente además del mosquito. Por ejemplo, de las 3 fotos de prueba de *aegypti* con fondo blanco (Mendeley), el mismo fondo de las fotos de *Culex*, MobileNetV2 clasificó 2 como *Culex* y la CNN propia con recorte, las 3.
+- La prueba de la CNN tiene solo 8 fotos de Culex, y cada especie viene sobre todo de una fuente distinta, así que la red podría estar aprendiendo la fuente además del mosquito. Por ejemplo, de las 3 fotos de prueba de *aegypti* con fondo blanco (Mendeley), el mismo fondo de las fotos de *Culex*, MobileNetV2 clasificó 2 como *Culex* y la CNN propia con recorte, las 3. Reentrenar MobileNetV2 con fotos de Mosquito Alert lo redujo mucho, pero *aegypti* con fondos variados sigue siendo difícil (2 de 7 aciertos): Mosquito Alert solo tiene 47 fotos de esa especie.
 - La lluvia de NASA POWER se estima con un modelo, no con estaciones. La semana del 26 de mayo de 2024 marca 625 mm, pero ni ERA5 ni las estaciones del IMN registran esa lluvia: es un error de la fuente. Se dejó documentado sin cambiar los datos; su efecto en el pronóstico es pequeño (RMSE de 260.2 a 255.4 si se corrige).
 - Los datos cantonales presentan diferencias respecto al total nacional y se utilizan para comparaciones entre cantones.
 - El conjunto de datos sintético no representa cifras oficiales. Solo se usa en el EDA y en el bonus por provincia, cuyos resultados muestran que el método funciona, no que pronostique el dengue real de cada provincia.
@@ -407,7 +419,7 @@ Aunque VectorIA integra los tres modelos y permite utilizarlos desde una aplicac
 ## 11. Posibles mejoras futuras
 
 - Probar la CNN propia con recorte en fotos de campo (fondos variados) y, si funciona, llevar el recorte a la API para usarla en la aplicación.
-- Conseguir más imágenes de *Culex* y mejorar el balance entre clases.
+- Conseguir más fotos de *Aedes aegypti* con fondos variados (Mosquito Alert tiene solo 47) y mejorar el balance entre clases.
 - Aumentar la precisión y el recall de la clase eliminación de criaderos en la ANN.
 - Incorporar nuevos datos epidemiológicos y climáticos.
 - Ampliar las visualizaciones para facilitar el análisis de los resultados.
@@ -431,6 +443,7 @@ El informe técnico completo está en `INFORME_TECNICO.md` y el uso de herramien
 - **IEEE DataPort:** imágenes de especies de mosquitos.
 - **Mendeley Data:** conjunto de imágenes de mosquitos vectores.
 - **Kaggle:** [Aedes Mosquitos Dataset](https://www.kaggle.com/datasets/pradeepisawasan/aedes-mosquitos) (Aedes aegypti y Aedes albopictus).
+- **Mosquito Alert:** [AI Mosquito Alert Challenge Dataset 2023](https://zenodo.org/records/15063886), Mosquito Alert Community, licencia CC BY-NC-SA 4.0.
 - **geoBoundaries:** fronteras de los cantones de Costa Rica para el mapa (dominio público, CC0).
 
 ---

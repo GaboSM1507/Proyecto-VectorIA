@@ -158,5 +158,171 @@
                 ]
             }
         }
+    },
+    "experimento_mosquito_alert": {
+        "descripcion": "MobileNetV2 con la última capa reentrenada agregando fotos de Mosquito Alert 2023 (sección 6 del notebook 02)",
+        "fuente": "AI Mosquito Alert Challenge Dataset 2023 (Zenodo 15063886, CC BY-NC-SA 4.0)",
+        "fotos_mosquito_alert": {
+            "train": 592,
+            "validación": 127,
+            "prueba": 128
+        },
+        "f1_validacion": {
+            "MobileNetV2 actual": 0.6999,
+            "MobileNetV2 con Mosquito Alert": 0.8606
+        },
+        "modelo_para_la_app": "mobilenet_mosquitos_ma.keras",
+        "prueba": {
+            "MobileNetV2 actual | Kaggle y Mendeley (247)": {
+                "f1_macro": 0.8533,
+                "aciertos": {
+                    "aegypti": "103/123",
+                    "albopictus": "110/120",
+                    "culex": "4/4"
+                },
+                "matriz_confusion": [
+                    [
+                        103,
+                        18,
+                        2
+                    ],
+                    [
+                        10,
+                        110,
+                        0
+                    ],
+                    [
+                        0,
+                        0,
+                        4
+                    ]
+                ]
+            },
+            "MobileNetV2 actual | Mosquito Alert (128)": {
+                "f1_macro": 0.2496,
+                "aciertos": {
+                    "aegypti": "0/7",
+                    "albopictus": "3/61",
+                    "culex": "57/60"
+                },
+                "matriz_confusion": [
+                    [
+                        0,
+                        0,
+                        7
+                    ],
+                    [
+                        8,
+                        3,
+                        50
+                    ],
+                    [
+                        3,
+                        0,
+                        57
+                    ]
+                ]
+            },
+            "MobileNetV2 actual | Fondo blanco, Mendeley (7)": {
+                "f1_macro": 0.4333,
+                "aciertos": {
+                    "aegypti": "1/3",
+                    "albopictus": "0/0",
+                    "culex": "4/4"
+                },
+                "matriz_confusion": [
+                    [
+                        1,
+                        0,
+                        2
+                    ],
+                    [
+                        0,
+                        0,
+                        0
+                    ],
+                    [
+                        0,
+                        0,
+                        4
+                    ]
+                ]
+            },
+            "MobileNetV2 con Mosquito Alert | Kaggle y Mendeley (247)": {
+                "f1_macro": 0.8422,
+                "aciertos": {
+                    "aegypti": "110/123",
+                    "albopictus": "99/120",
+                    "culex": "4/4"
+                },
+                "matriz_confusion": [
+                    [
+                        110,
+                        12,
+                        1
+                    ],
+                    [
+                        20,
+                        99,
+                        1
+                    ],
+                    [
+                        0,
+                        0,
+                        4
+                    ]
+                ]
+            },
+            "MobileNetV2 con Mosquito Alert | Mosquito Alert (128)": {
+                "f1_macro": 0.7005,
+                "aciertos": {
+                    "aegypti": "2/7",
+                    "albopictus": "50/61",
+                    "culex": "58/60"
+                },
+                "matriz_confusion": [
+                    [
+                        2,
+                        5,
+                        0
+                    ],
+                    [
+                        3,
+                        50,
+                        8
+                    ],
+                    [
+                        0,
+                        2,
+                        58
+                    ]
+                ]
+            },
+            "MobileNetV2 con Mosquito Alert | Fondo blanco, Mendeley (7)": {
+                "f1_macro": 0.463,
+                "aciertos": {
+                    "aegypti": "1/3",
+                    "albopictus": "0/0",
+                    "culex": "4/4"
+                },
+                "matriz_confusion": [
+                    [
+                        1,
+                        1,
+                        1
+                    ],
+                    [
+                        0,
+                        0,
+                        0
+                    ],
+                    [
+                        0,
+                        0,
+                        4
+                    ]
+                ]
+            }
+        }
     }
 }
